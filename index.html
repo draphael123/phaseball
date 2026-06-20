@@ -38,9 +38,25 @@
   #scoreLine{margin-top:4px; font-size:13px}
   #scoreLine b{color:var(--gold); font-weight:700}
 
-  #mute{position:absolute; top:14px; left:50%; transform:translateX(-50%);
-    pointer-events:auto; cursor:pointer; font-size:18px; width:42px; height:42px;
-    display:flex; align-items:center; justify-content:center; user-select:none}
+  #toolbar{position:absolute; top:12px; left:50%; transform:translateX(-50%); display:flex; gap:8px}
+  .toolbtn{pointer-events:auto; cursor:pointer; font-size:18px; width:42px; height:42px;
+    display:flex; align-items:center; justify-content:center; user-select:none; border-radius:10px;
+    background:rgba(10,16,34,.5); border:1px solid rgba(55,230,255,.3)}
+  .toolbtn:hover{background:rgba(55,230,255,.16)}
+
+  /* settings panel */
+  #settings{top:50%; left:50%; transform:translate(-50%,-50%); width:min(360px,90vw);
+    text-align:left; pointer-events:auto; z-index:7}
+  #settings h2{font-size:22px; letter-spacing:5px; font-style:italic; color:#fff; text-align:center;
+    margin-bottom:14px; text-shadow:0 0 16px rgba(255,79,216,.6)}
+  .setrow{display:flex; align-items:center; justify-content:space-between; gap:12px; margin:10px 0; font-size:13px}
+  .setrow input[type=range]{flex:1; accent-color:#37e6ff}
+  .settoggle{pointer-events:auto; cursor:pointer; min-width:74px; padding:5px 10px; border-radius:8px;
+    font-size:12px; font-weight:700; color:#04121a; background:#37e6ff; border:none}
+  .settoggle.off{color:#cfe; background:rgba(55,230,255,.15); border:1px solid rgba(55,230,255,.4)}
+  #setReset{margin-top:6px; width:100%; padding:8px; border-radius:8px; cursor:pointer;
+    background:rgba(255,79,216,.15); border:1px solid var(--magenta); color:#ffd; font-size:12px}
+  #settings .btn{display:block; margin:16px auto 0}
 
   #center{top:50%; left:50%; transform:translate(-50%,-50%); text-align:center;
     pointer-events:auto; min-width:280px; max-width:440px}
@@ -157,7 +173,21 @@
     <div id="scoreLine">Score <b id="score">0</b></div>
   </div>
 
-  <div id="mute" title="Mute (M)">🔊</div>
+  <div id="toolbar">
+    <div id="mute" class="toolbtn" title="Mute (M)">🔊</div>
+    <div id="gear" class="toolbtn" title="Settings">⚙</div>
+  </div>
+
+  <div id="settings" class="panel hidden">
+    <h2>SETTINGS</h2>
+    <div class="setrow"><span>Music</span><input type="range" id="setMusic" min="0" max="100"></div>
+    <div class="setrow"><span>Sound FX</span><input type="range" id="setSfx" min="0" max="100"></div>
+    <div class="setrow"><span>Screen shake</span><button class="settoggle" id="setShake">On</button></div>
+    <div class="setrow"><span>Chase camera</span><button class="settoggle" id="setCam">On</button></div>
+    <div class="setrow"><span>Retro filter</span><button class="settoggle" id="setScan">On</button></div>
+    <button id="setReset">Reset best times &amp; ghosts</button>
+    <button class="btn" id="setClose">Close</button>
+  </div>
 
   <div id="flash"></div>
   <div id="combo"></div>
@@ -290,7 +320,7 @@ app.appendChild(renderer.domElement);
 
 // Post-processing (bloom) + environment reflections, loaded async so the game
 // still runs if the CDN addons are ever unreachable (falls back to plain render).
-let composer=null, bloomPass=null, rgbPass=null;
+let composer=null, bloomPass=null, rgbPass=null, filmPass=null;
 (async()=>{
   try{
     const A='three/addons/';
@@ -309,9 +339,11 @@ let composer=null, bloomPass=null, rgbPass=null;
     composer.addPass(bloomPass);
     rgbPass=new ShaderPass(RGBShiftShader); rgbPass.uniforms.amount.value=0.0014;  // VHS color fringe
     composer.addPass(rgbPass);
-    composer.addPass(new FilmPass(0.25));                                        // scanlines + grain
+    filmPass=new FilmPass(0.25);                                                 // scanlines + grain
+    composer.addPass(filmPass);
     composer.addPass(new OutputPass());
     composer.setSize(innerWidth, innerHeight);
+    applySettings();   // apply retro-filter / volume prefs now that passes exist
   }catch(e){ console.warn('PHASEBALL: post-processing unavailable, using basic renderer.', e); composer=null; }
 })();
 
@@ -640,6 +672,7 @@ const Audio = (()=>{
   let ctx=null, master, musicGain, sfxGain, rollGain, rollFilter, rollSrc;
   let muted = localStorage.getItem('phaseball_muted')==='1';
   let trackGain=null, trackBuf=null, trackSrc=null, trackReady=false, trackTried=false;
+  let musicVol=1, sfxVol=1;   // 0..1 multipliers from the settings menu
   const music = { on:false, next:0, step:0 };
   const PROG = [ // 4 bars: C  G  Am  F  — bright and bouncy
     {bass:36, notes:[60,64,67,72]},
@@ -653,11 +686,11 @@ const Audio = (()=>{
     if(ctx) return;
     ctx = new (window.AudioContext||window.webkitAudioContext)();
     master = ctx.createGain(); master.gain.value = muted?0:0.9; master.connect(ctx.destination);
-    musicGain = ctx.createGain(); musicGain.gain.value = 0.16;
+    musicGain = ctx.createGain(); musicGain.gain.value = 0.16*musicVol;
     const mlp = ctx.createBiquadFilter(); mlp.type='lowpass'; mlp.frequency.value=2400;
     musicGain.connect(mlp); mlp.connect(master);
-    sfxGain = ctx.createGain(); sfxGain.gain.value = 0.7; sfxGain.connect(master);
-    trackGain = ctx.createGain(); trackGain.gain.value = 0.55; trackGain.connect(master);
+    sfxGain = ctx.createGain(); sfxGain.gain.value = 0.7*sfxVol; sfxGain.connect(master);
+    trackGain = ctx.createGain(); trackGain.gain.value = 0.55*musicVol; trackGain.connect(master);
     // rolling rumble: looping noise -> lowpass -> gain (driven by marble speed)
     const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
     const d = buf.getChannelData(0);
@@ -709,6 +742,8 @@ const Audio = (()=>{
       if(master) master.gain.setTargetAtTime(muted?0:0.9, ctx.currentTime, 0.05);
       return muted;
     },
+    setMusicVol(v){ musicVol=v; if(musicGain) musicGain.gain.value=0.16*v; if(trackGain) trackGain.gain.value=0.55*v; },
+    setSfxVol(v){ sfxVol=v; if(sfxGain) sfxGain.gain.value=0.7*v; },
     // --- SFX ---
     go(){ if(!ctx)return; const t=ctx.currentTime; note(m2f(72),t,0.18,'square',0.5); note(m2f(79),t+0.05,0.3,'square',0.5); },
     tick(n){ if(!ctx)return; note(m2f(67+n*2), ctx.currentTime, 0.12,'square',0.35); },
@@ -819,7 +854,7 @@ const state = {
   best:LEVELS.map(()=>null), won:false,
   score:0, combo:0, comboTimer:0,
   intro:0, went:false, shake:0, squash:0, idle:0, idleFired:false,
-  happy:0, dizzy:0, lastTick:99, attract:false,
+  happy:0, dizzy:0, lastTick:99, attract:false, paused:false,
   hitstop:0, fovKick:0, shockT:0,   // dash juice: freeze-frame, FOV punch, shockwave
 };
 // camera heading (eased toward direction of travel) + camera-relative input
@@ -919,7 +954,7 @@ function populateLevelSelect(){
   });
 }
 
-function restartStage(){ if(state.intro>0 || state.running) loadStage(state.stageIdx); }
+function restartStage(){ if(!state.paused && (state.intro>0 || state.running)) loadStage(state.stageIdx); }
 
 function nextStage(){
   // ---- score this clear ----
@@ -1006,6 +1041,7 @@ function setCountdownTick(n){
 const keys = {};
 addEventListener('keydown', e=>{
   keys[e.code]=true;
+  if(e.code==='Escape'){ document.getElementById('gear').onclick(); return; }
   if(e.code==='Space'){ tryDash(); e.preventDefault(); }
   if(e.code==='KeyR') restartStage();
   if(e.code==='KeyM') setMute(Audio.toggleMute());
@@ -1025,8 +1061,45 @@ function setMute(m){ document.getElementById('mute').textContent = m? '🔇' : '
 setMute(Audio.muted);
 document.getElementById('mute').onclick=()=>{ Audio.resume(); setMute(Audio.toggleMute()); };
 
+// ---- Settings ------------------------------------------------------------
+const settings = { music:0.8, sfx:0.9, shake:true, camera:true, retro:true };
+try{ Object.assign(settings, JSON.parse(localStorage.getItem('phaseball_settings')||'{}')); }catch(e){}
+function saveSettings(){ localStorage.setItem('phaseball_settings', JSON.stringify(settings)); }
+function applySettings(){
+  Audio.setMusicVol(settings.music); Audio.setSfxVol(settings.sfx);
+  TUNE.camFollow = settings.camera;
+  if(filmPass) filmPass.enabled = settings.retro;
+  if(rgbPass) rgbPass.enabled = settings.retro;
+  // reflect into the menu widgets
+  const $=id=>document.getElementById(id);
+  $('setMusic').value = Math.round(settings.music*100);
+  $('setSfx').value = Math.round(settings.sfx*100);
+  const tog=(id,on)=>{ const b=$(id); b.textContent=on?'On':'Off'; b.classList.toggle('off',!on); };
+  tog('setShake',settings.shake); tog('setCam',settings.camera); tog('setScan',settings.retro);
+}
+function openSettings(){ Audio.resume(); state.paused=true; Audio.rollOff();
+  document.getElementById('center').classList.add('hidden');
+  document.getElementById('settings').classList.remove('hidden'); applySettings(); }
+function closeSettings(){ state.paused=false;
+  document.getElementById('settings').classList.add('hidden');
+  if(!state.running) document.getElementById('center').classList.remove('hidden'); }
+document.getElementById('gear').onclick=()=>{ const s=document.getElementById('settings');
+  s.classList.contains('hidden')? openSettings() : closeSettings(); };
+document.getElementById('setClose').onclick=closeSettings;
+document.getElementById('setMusic').oninput=e=>{ settings.music=e.target.value/100; Audio.setMusicVol(settings.music); saveSettings(); };
+document.getElementById('setSfx').oninput=e=>{ settings.sfx=e.target.value/100; Audio.setSfxVol(settings.sfx); Audio.ui(); saveSettings(); };
+document.getElementById('setShake').onclick=()=>{ settings.shake=!settings.shake; applySettings(); saveSettings(); };
+document.getElementById('setCam').onclick=()=>{ settings.camera=!settings.camera; applySettings(); saveSettings(); };
+document.getElementById('setScan').onclick=()=>{ settings.retro=!settings.retro; applySettings(); saveSettings(); };
+document.getElementById('setReset').onclick=()=>{
+  if(!confirm('Reset all best times and ghosts?')) return;
+  state.best=LEVELS.map(()=>null); ghostData=LEVELS.map(()=>null);
+  localStorage.removeItem('phaseball_best'); localStorage.removeItem('phaseball_ghost');
+  populateLevelSelect(); updateHud();
+};
+
 function tryDash(){
-  if(!state.running) return;
+  if(!state.running || state.paused) return;
   if(state.energy < TUNE.dashCost){ flash('NO TURBO'); Audio.deny(); quip('noEnergy', 2400); return; }
   // dash direction: steering input > current velocity > camera heading
   let dx, dz;
@@ -1304,7 +1377,9 @@ function frame(now){
     if(state.intro<=0.4){ showCountdown(false); }
   }
 
-  if(state.running && state.hitstop>0){
+  if(state.running && state.paused){
+    /* settings menu open — sim frozen, still rendering */
+  } else if(state.running && state.hitstop>0){
     state.hitstop=Math.max(0,state.hitstop-dt);   // freeze-frame: hold the sim, keep rendering
   } else if(state.running){
     // fixed substeps for stable physics
@@ -1341,7 +1416,7 @@ function frame(now){
 
   // rolling sound
   const speed = Math.hypot(vel.x,vel.z);
-  if(state.running) Audio.roll(speed); else Audio.rollOff();
+  if(state.running && !state.paused) Audio.roll(speed); else Audio.rollOff();
   Audio.pumpMusic();
 
   // marble follow + roll
@@ -1435,11 +1510,13 @@ function frame(now){
   updateGhost();
   updateCamera(dt);
 
-  // screen shake (applied after camera solve)
+  // screen shake (applied after camera solve; can be disabled in settings)
   if(state.shake>0){
-    camera.position.x += (Math.random()-.5)*state.shake;
-    camera.position.y += (Math.random()-.5)*state.shake;
-    camera.position.z += (Math.random()-.5)*state.shake;
+    if(settings.shake){
+      camera.position.x += (Math.random()-.5)*state.shake;
+      camera.position.y += (Math.random()-.5)*state.shake;
+      camera.position.z += (Math.random()-.5)*state.shake;
+    }
     state.shake *= Math.exp(-8*dt); if(state.shake<0.01) state.shake=0;
   }
 
@@ -1465,9 +1542,10 @@ function frame(now){
 
   if(composer) composer.render(); else renderer.render(scene, camera);
 }
-// boot: show the level count, build the stage picker, spin up the attract scene
+// boot: show the level count, build the stage picker, apply prefs, spin up attract
 document.getElementById('stageTot').textContent = LEVELS.length;
 populateLevelSelect();
+applySettings();
 loadStage(0, true);
 requestAnimationFrame(frame);
 

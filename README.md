@@ -27,6 +27,9 @@ soundtrack — all narrated by **the Circuit**, a dry, smug voice that quietly j
   pulses the chromatic aberration, and a barrier smash adds a crunchy freeze-frame (hitstop).
 - **Level select** — pick any of the 5 stages from the title/results screen (with each stage's
   best time + medal); **Press Start** runs the full circuit from stage 1.
+- **Settings** — a ⚙ menu (or **Esc**) pauses the game and exposes music/SFX volume, screen-shake,
+  chase-camera, and retro-filter (scanlines) toggles, plus a reset for best times — all saved
+  to localStorage.
 - **A face in the ball** — eyes that blink and glance where you're rolling, a grin when you
   grab a banana, a shocked "O" on a fall, and a dizzy spin after a hard landing.
 - **Chase camera** — the camera swings behind your direction of travel, with camera-relative
