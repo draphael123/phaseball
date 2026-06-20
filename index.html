@@ -58,6 +58,24 @@
     background:rgba(255,79,216,.15); border:1px solid var(--magenta); color:#ffd; font-size:12px}
   #settings .btn{display:block; margin:16px auto 0}
 
+  /* customize / garage */
+  #customize{top:50%; left:50%; transform:translate(-50%,-50%); width:min(420px,92vw);
+    max-height:84vh; overflow:auto; text-align:center; pointer-events:auto; z-index:7}
+  #customize h2{font-size:22px; letter-spacing:5px; font-style:italic; color:#fff;
+    margin-bottom:2px; text-shadow:0 0 16px rgba(255,79,216,.6)}
+  #cosStars{font-size:13px; color:var(--gold); margin-bottom:10px}
+  .cossec{font-size:11px; letter-spacing:3px; color:#ff8ad6; text-transform:uppercase; margin:8px 0 6px}
+  .cosgrid{display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-bottom:8px}
+  .cositem{cursor:pointer; width:76px; padding:8px 4px; border-radius:10px; font-size:11px;
+    background:rgba(55,230,255,.07); border:1px solid rgba(55,230,255,.3); transition:transform .08s}
+  .cositem:hover{transform:translateY(-2px)}
+  .cositem.equipped{border-color:#37e6ff; box-shadow:0 0 14px rgba(55,230,255,.55); background:rgba(55,230,255,.16)}
+  .cositem.locked{opacity:.45; cursor:not-allowed}
+  .cositem .sw{width:30px; height:30px; border-radius:50%; margin:0 auto 5px; border:1px solid rgba(255,255,255,.35)}
+  .cositem .ic{font-size:24px; line-height:30px; margin-bottom:2px}
+  .cositem .cost{color:var(--gold)}
+  #customize .btn{display:block; margin:14px auto 0}
+
   #center{top:50%; left:50%; transform:translate(-50%,-50%); text-align:center;
     pointer-events:auto; min-width:280px; max-width:440px}
   #center h1{font-size:46px; letter-spacing:8px; font-style:italic; font-weight:800;
@@ -175,7 +193,18 @@
 
   <div id="toolbar">
     <div id="mute" class="toolbtn" title="Mute (M)">🔊</div>
+    <div id="paint" class="toolbtn" title="Customize">🎨</div>
     <div id="gear" class="toolbtn" title="Settings">⚙</div>
+  </div>
+
+  <div id="customize" class="panel hidden">
+    <h2>GARAGE</h2>
+    <div id="cosStars">⭐ 0 stars</div>
+    <div class="cossec">Marble color</div>
+    <div class="cosgrid" id="cosColors"></div>
+    <div class="cossec">Hat</div>
+    <div class="cosgrid" id="cosHats"></div>
+    <button class="btn" id="cosClose">Close</button>
   </div>
 
   <div id="settings" class="panel hidden">
@@ -975,6 +1004,8 @@ function nextStage(){
     localStorage.setItem('phaseball_best', JSON.stringify(state.best));
     ghostData[i]=rec; try{ localStorage.setItem('phaseball_ghost', JSON.stringify(ghostData)); }catch(e){}
   }
+  // ---- all-bananas record (earns a star) ----
+  if(allBananas && !bestFull[i]){ bestFull[i]=true; localStorage.setItem('phaseball_full', JSON.stringify(bestFull)); }
 
   // ---- narrator reaction ----
   if(allBananas && Math.random()<0.6) quip('allBananas', 3000);
@@ -1017,6 +1048,7 @@ function winGame(){
   document.getElementById('keysHelp').classList.add('hidden');
   document.getElementById('startBtn').textContent='Play Again';
   populateLevelSelect();   // refresh best times/medals on the picker
+  populateCustomize();     // stars may have changed
   quip('win', 5000);
 }
 
@@ -1079,6 +1111,7 @@ function applySettings(){
 }
 function openSettings(){ Audio.resume(); state.paused=true; Audio.rollOff();
   document.getElementById('center').classList.add('hidden');
+  document.getElementById('customize').classList.add('hidden');
   document.getElementById('settings').classList.remove('hidden'); applySettings(); }
 function closeSettings(){ state.paused=false;
   document.getElementById('settings').classList.add('hidden');
@@ -1093,10 +1126,119 @@ document.getElementById('setCam').onclick=()=>{ settings.camera=!settings.camera
 document.getElementById('setScan').onclick=()=>{ settings.retro=!settings.retro; applySettings(); saveSettings(); };
 document.getElementById('setReset').onclick=()=>{
   if(!confirm('Reset all best times and ghosts?')) return;
-  state.best=LEVELS.map(()=>null); ghostData=LEVELS.map(()=>null);
-  localStorage.removeItem('phaseball_best'); localStorage.removeItem('phaseball_ghost');
-  populateLevelSelect(); updateHud();
+  state.best=LEVELS.map(()=>null); ghostData=LEVELS.map(()=>null); bestFull=LEVELS.map(()=>false);
+  localStorage.removeItem('phaseball_best'); localStorage.removeItem('phaseball_ghost'); localStorage.removeItem('phaseball_full');
+  populateLevelSelect(); populateCustomize(); updateHud();
 };
+
+// ---- Cosmetics: colors + hats unlocked with stars ------------------------
+let bestFull=LEVELS.map(()=>false);
+try{ const f=JSON.parse(localStorage.getItem('phaseball_full')||'[]'); if(Array.isArray(f)) bestFull=f; }catch(e){}
+while(bestFull.length<LEVELS.length) bestFull.push(false);
+const cosmetics = {color:0, hat:0};
+try{ Object.assign(cosmetics, JSON.parse(localStorage.getItem('phaseball_cos')||'{}')); }catch(e){}
+function saveCos(){ localStorage.setItem('phaseball_cos', JSON.stringify(cosmetics)); }
+
+// stars per stage = 1 (cleared) + medal bonus (gold+2 / silver+1) + 1 (all bananas)
+function starsFor(i){ const b=state.best[i]; if(b==null) return 0; const m=medalFor(i,b);
+  return 1 + (m==='🥇'?2:m==='🥈'?1:0) + (bestFull[i]?1:0); }
+function computeStars(){ let s=0; for(let i=0;i<LEVELS.length;i++) s+=starsFor(i); return s; }
+
+const COLORS=[
+  {name:'Chrome', cost:0,  hex:0xffffff},
+  {name:'Cyan',   cost:2,  hex:0x7df0ff},
+  {name:'Magenta',cost:4,  hex:0xff7de0},
+  {name:'Gold',   cost:6,  hex:0xffd24a},
+  {name:'Emerald',cost:9,  hex:0x6affb0},
+  {name:'Violet', cost:12, hex:0xb98cff},
+  {name:'Crimson',cost:15, hex:0xff6a6a},
+  {name:'Rainbow',cost:20, hex:0xffffff, rainbow:true},
+];
+const HATS=[
+  {name:'None',   cost:0,  type:null},
+  {name:'Halo',   cost:3,  type:'halo'},
+  {name:'Cap',    cost:5,  type:'cap'},
+  {name:'Antenna',cost:7,  type:'antenna'},
+  {name:'Top Hat',cost:10, type:'tophat'},
+  {name:'Crown',  cost:13, type:'crown'},
+  {name:'Party',  cost:16, type:'party'},
+  {name:'Star',   cost:20, type:'star'},
+];
+
+let hatMesh=null, rainbowOn=false;
+function makeHat(type){
+  if(!type) return null;
+  const g=new THREE.Group(); g.position.y=0.5;   // sit on top of the ball
+  const mat=(c,emi)=> new THREE.MeshStandardMaterial({color:c, metalness:.35, roughness:.5,
+    emissive:emi||0x000000, emissiveIntensity:emi?0.9:0});
+  if(type==='halo'){
+    const h=new THREE.Mesh(new THREE.TorusGeometry(0.26,0.045,12,32), new THREE.MeshBasicMaterial({color:0xffe24a}));
+    h.rotation.x=Math.PI/2; h.position.y=0.34; g.add(h);
+  } else if(type==='cap'){
+    const dome=new THREE.Mesh(new THREE.SphereGeometry(0.33,20,12,0,Math.PI*2,0,Math.PI/2), mat(0xff3060)); g.add(dome);
+    const brim=new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.2,0.04,18,1,false,0,Math.PI), mat(0xff3060));
+    brim.position.set(0,0.0,0.3); g.add(brim);
+  } else if(type==='antenna'){
+    const rod=new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.018,0.4,8), mat(0x999999)); rod.position.y=0.2; g.add(rod);
+    const ball=new THREE.Mesh(new THREE.SphereGeometry(0.07,12,12), mat(0x37e6ff,0x37e6ff)); ball.position.y=0.43; g.add(ball);
+  } else if(type==='tophat'){
+    const brim=new THREE.Mesh(new THREE.CylinderGeometry(0.36,0.36,0.04,24), mat(0x16121e)); g.add(brim);
+    const body=new THREE.Mesh(new THREE.CylinderGeometry(0.24,0.24,0.36,24), mat(0x16121e)); body.position.y=0.2; g.add(body);
+    const band=new THREE.Mesh(new THREE.CylinderGeometry(0.245,0.245,0.07,24), mat(0xff4fd8,0xff4fd8)); band.position.y=0.07; g.add(band);
+  } else if(type==='crown'){
+    const base=new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.26,0.16,8), mat(0xffd24a,0xffaa12)); base.position.y=0.08; g.add(base);
+    for(let i=0;i<6;i++){ const sp=new THREE.Mesh(new THREE.ConeGeometry(0.06,0.16,8), mat(0xffd24a,0xffaa12));
+      const a=i/6*Math.PI*2; sp.position.set(Math.cos(a)*0.22,0.22,Math.sin(a)*0.22); g.add(sp); }
+  } else if(type==='party'){
+    const cone=new THREE.Mesh(new THREE.ConeGeometry(0.22,0.5,20), mat(0xff66cc)); cone.position.y=0.25; g.add(cone);
+    const tip=new THREE.Mesh(new THREE.SphereGeometry(0.06,12,12), mat(0xffe24a,0xffe24a)); tip.position.y=0.52; g.add(tip);
+  } else if(type==='star'){
+    const st=new THREE.Mesh(new THREE.OctahedronGeometry(0.2), mat(0xffe24a,0xffaa12)); st.position.y=0.32; g.add(st);
+    g.userData.spin=st;
+  }
+  return g;
+}
+function applyCosmetics(){
+  const col=COLORS[cosmetics.color]||COLORS[0];
+  rainbowOn=!!col.rainbow;
+  if(!rainbowOn) marble.material.color.setHex(col.hex);
+  if(hatMesh){ marbleSpin.remove(hatMesh); hatMesh=null; }
+  const hat=HATS[cosmetics.hat]||HATS[0];
+  hatMesh=makeHat(hat.type); if(hatMesh) marbleSpin.add(hatMesh);
+}
+const HAT_ICON={halo:'😇',cap:'🧢',antenna:'📡',tophat:'🎩',crown:'👑',party:'🎉',star:'⭐'};
+function populateCustomize(){
+  const stars=computeStars();
+  document.getElementById('cosStars').textContent='⭐ '+stars+' stars';
+  const cg=document.getElementById('cosColors'); cg.innerHTML='';
+  COLORS.forEach((c,i)=>{
+    const unlocked=stars>=c.cost, eq=cosmetics.color===i;
+    const d=document.createElement('div'); d.className='cositem'+(eq?' equipped':'')+(unlocked?'':' locked');
+    const sw=c.rainbow? 'background:conic-gradient(red,orange,gold,lime,cyan,#39f,magenta,red)'
+                      : 'background:#'+c.hex.toString(16).padStart(6,'0');
+    d.innerHTML='<div class="sw" style="'+sw+'"></div>'+c.name+(unlocked?'':'<div class="cost">⭐'+c.cost+'</div>');
+    if(unlocked) d.onclick=()=>{ cosmetics.color=i; applyCosmetics(); saveCos(); populateCustomize(); Audio.ui(); };
+    cg.appendChild(d);
+  });
+  const hg=document.getElementById('cosHats'); hg.innerHTML='';
+  HATS.forEach((h,i)=>{
+    const unlocked=stars>=h.cost, eq=cosmetics.hat===i;
+    const d=document.createElement('div'); d.className='cositem'+(eq?' equipped':'')+(unlocked?'':' locked');
+    d.innerHTML='<div class="ic">'+(h.type?(HAT_ICON[h.type]||'🎩'):'🚫')+'</div>'+h.name+(unlocked?'':'<div class="cost">⭐'+h.cost+'</div>');
+    if(unlocked) d.onclick=()=>{ cosmetics.hat=i; applyCosmetics(); saveCos(); populateCustomize(); Audio.ui(); };
+    hg.appendChild(d);
+  });
+}
+function openCustomize(){ Audio.resume(); state.paused=true; Audio.rollOff();
+  document.getElementById('center').classList.add('hidden');
+  document.getElementById('settings').classList.add('hidden');
+  document.getElementById('customize').classList.remove('hidden'); populateCustomize(); }
+function closeCustomize(){ state.paused=false;
+  document.getElementById('customize').classList.add('hidden');
+  if(!state.running) document.getElementById('center').classList.remove('hidden'); }
+document.getElementById('paint').onclick=()=>{ const c=document.getElementById('customize');
+  c.classList.contains('hidden')? openCustomize() : closeCustomize(); };
+document.getElementById('cosClose').onclick=closeCustomize;
 
 function tryDash(){
   if(!state.running || state.paused) return;
@@ -1446,6 +1588,9 @@ function frame(now){
   marbleGlow.color.setHex(dashActive?0x6ff0ff:0xff6fe0);
   marbleGlow.intensity = dashActive? 2.4 : marbleGlow.intensity;
   trail.material.opacity = dashActive? 0.95 : 0.6;
+  // cosmetics: rainbow marble cycles hue; the star hat spins
+  if(rainbowOn) marble.material.color.setHSL((t*0.12)%1, 0.85, 0.6);
+  if(hatMesh && hatMesh.userData.spin) hatMesh.userData.spin.rotation.y += dt*2.5;
 
   // ---- face: expressions (glance, blink, shock, grin, dizzy) ----
   state.happy = Math.max(0, state.happy - dt);
@@ -1546,6 +1691,8 @@ function frame(now){
 document.getElementById('stageTot').textContent = LEVELS.length;
 populateLevelSelect();
 applySettings();
+applyCosmetics();
+populateCustomize();
 loadStage(0, true);
 requestAnimationFrame(frame);
 

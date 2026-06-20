@@ -30,6 +30,10 @@ soundtrack — all narrated by **the Circuit**, a dry, smug voice that quietly j
 - **Settings** — a ⚙ menu (or **Esc**) pauses the game and exposes music/SFX volume, screen-shake,
   chase-camera, and retro-filter (scanlines) toggles, plus a reset for best times — all saved
   to localStorage.
+- **Unlockables (🎨 Garage)** — earn **stars** from your best runs (per stage: +1 cleared,
+  +2 gold / +1 silver, +1 all-bananas) and spend them to unlock **marble colors** (incl. an
+  animated Rainbow) and **3D hats** (halo, cap, top hat, crown, party, antenna, star). Equip
+  your look; it's saved and previewed live on the attract-screen marble.
 - **A face in the ball** — eyes that blink and glance where you're rolling, a grin when you
   grab a banana, a shocked "O" on a fall, and a dizzy spin after a hard landing.
 - **Chase camera** — the camera swings behind your direction of travel, with camera-relative
