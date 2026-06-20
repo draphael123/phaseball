@@ -31,10 +31,10 @@
   #timer.urgent{color:#ff5a6a; text-shadow:0 0 14px #ff2a44; animation:turg .5s infinite alternate}
   @keyframes turg{from{transform:scale(1)}to{transform:scale(1.14)}}
   #parLabel{font-size:11px; opacity:.55; letter-spacing:1px}
-  .phasebars{display:flex; gap:6px; margin-top:6px; justify-content:flex-end}
-  .pb{width:26px; height:8px; border-radius:4px; background:rgba(255,79,216,.18);
-    border:1px solid rgba(255,79,216,.5)}
-  .pb.on{background:var(--magenta); box-shadow:0 0 10px var(--magenta)}
+  .meter{width:120px; height:10px; margin-top:6px; margin-left:auto; border-radius:6px;
+    background:rgba(55,230,255,.12); border:1px solid rgba(55,230,255,.45); overflow:hidden}
+  .meterfill{height:100%; width:100%; border-radius:6px; transition:width .08s linear;
+    background:linear-gradient(90deg,#9a3cff,#37e6ff); box-shadow:0 0 12px var(--cyan)}
   #scoreLine{margin-top:4px; font-size:13px}
   #scoreLine b{color:var(--gold); font-weight:700}
 
@@ -142,8 +142,8 @@
   <div id="topright" class="panel">
     <div id="timer">0.00</div>
     <div id="parLabel">PAR —</div>
-    <div style="font-size:11px;opacity:.7;letter-spacing:2px">PHASE</div>
-    <div class="phasebars" id="phasebars"></div>
+    <div style="font-size:11px;opacity:.7;letter-spacing:2px">TURBO</div>
+    <div class="meter"><div class="meterfill" id="energyFill"></div></div>
     <div id="scoreLine">Score <b id="score">0</b></div>
   </div>
 
@@ -161,13 +161,14 @@
 
   <div id="center" class="panel">
     <h1>PHASEBALL</h1>
-    <div class="sub" id="subtitle">NEON CIRCUIT · TILT · PHASE · ROLL</div>
-    <div id="centerText">You don't steer the marble — you <b>tilt the world</b> and let gravity roll it home.<br/>
-      Cyan walls block you. <b style="color:var(--magenta)">Magenta phase-walls</b> can be passed through —
-      hit <kbd>Space</kbd> to go intangible for a moment. Grab <b style="color:var(--gold)">bananas</b>, beat the clock.</div>
+    <div class="sub" id="subtitle">NEON CIRCUIT · TILT · TURBO · ROLL</div>
+    <div id="centerText">You don't steer the marble — you <b>tilt the world</b> and let gravity roll it home.
+      Cyan walls block you. <b style="color:var(--magenta)">Magenta barriers</b> only break to a
+      <b style="color:var(--cyan)">turbo dash</b> — hit <kbd>Space</kbd> to boost and smash through.
+      Your turbo recharges. Grab <b style="color:var(--gold)">bananas</b>, beat the clock.</div>
     <div class="keys" id="keysHelp">
       <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows — tilt &nbsp;·&nbsp;
-      <kbd>Space</kbd> — phase &nbsp;·&nbsp; <kbd>R</kbd> — restart &nbsp;·&nbsp; <kbd>M</kbd> — mute
+      <kbd>Space</kbd> — turbo dash &nbsp;·&nbsp; <kbd>R</kbd> — restart &nbsp;·&nbsp; <kbd>M</kbd> — mute
     </div>
     <button class="btn" id="startBtn">Press Start</button>
   </div>
@@ -175,7 +176,7 @@
 
 <div id="touch">
   <div id="stick"><div id="nub"></div></div>
-  <div id="phaseBtn">PHASE</div>
+  <div id="phaseBtn">TURBO</div>
 </div>
 
 <script type="importmap">
@@ -188,7 +189,7 @@
 import * as THREE from 'three';
 
 // ---------------------------------------------------------------------------
-// PHASEBALL — a tilt-the-world marble game with a phase-through-walls twist.
+// PHASEBALL — a tilt-the-world marble game with a turbo-dash-through-barriers twist.
 // Physics model: the stage stays flat; player input tilts gravity (the classic
 // Monkey Ball equivalence), which we also render as a subtle visual world-lean.
 // The presentation leans Monkey-Ball-arcade (countdown, bounce, bananas, fanfare)
@@ -204,7 +205,10 @@ const TUNE = {
   damping: 0.6,        // velocity damping per second (rolling resistance)
   wallRestitution: 0.35,
   killY: -14,
-  phaseTime: 1.1,      // seconds intangible per charge
+  dashBoost: 16,       // velocity impulse added by a turbo dash
+  dashTime: 0.32,      // seconds the dash window stays "hot" (can smash barriers)
+  dashCost: 0.34,      // energy spent per dash (meter is 0..1)
+  energyRegen: 0.34,   // energy refilled per second (≈3s to full)
   visualLean: 0.10,    // how much of maxTilt the world visibly tilts
   comboWindow: 2.6,    // seconds to keep a banana combo alive
   camFollow: true,     // camera swings behind travel + camera-relative controls
@@ -212,24 +216,24 @@ const TUNE = {
 };
 
 // ---- Level data ----------------------------------------------------------
-// plat: {x,z,w,d,[y=0]}  wall: {x,z,w,d,[h=1.2],phase?}  gem:{x,z}
-// start:{x,z}  goal:{x,z,r}  medals:{g,s,b}  (target seconds for gold/silver/bronze)
+// plat: {x,z,w,d,[y=0]}  wall: {x,z,w,d,[h=1.2],breakable?}  gem:{x,z}
+// start:{x,z}  goal:{x,z,r}  medals:{g,s,b}  par:sec   (breakable walls need a turbo dash)
 const LEVELS = [
-  // 1: teach rolling + a single full-width phase gate you MUST pass through.
+  // 1: teach rolling + a single full-width barrier you MUST dash through.
   { name:'WARMUP',
     plats:[ {x:0,z:-8,w:7,d:28} ],                  // x[-3.5,3.5] z[-22,6]
-    walls:[ {x:0,z:-8,w:7,d:1,phase:true} ],         // gate spans the whole corridor at z=-8
+    walls:[ {x:0,z:-8,w:7,d:1,breakable:true} ],         // gate spans the whole corridor at z=-8
     gems:[ {x:0,z:1}, {x:1.4,z:-4}, {x:-1.2,z:-12}, {x:0,z:-16} ],
-    start:{x:0,z:3}, goal:{x:0,z:-19,r:1.5}, phaseCharges:1, medals:{g:9,s:13,b:20}, par:40 },
+    start:{x:0,z:3}, goal:{x:0,z:-19,r:1.5}, medals:{g:9,s:13,b:20}, par:40 },
 
   // 2: phase gate, then a solid wall you must route around to reach the goal.
   { name:'THE DIVIDE',
     plats:[ {x:0,z:0,w:7,d:10},                      // entry x[-3.5,3.5] z[-5,5]
             {x:0,z:-11,w:16,d:16} ],                 // field x[-8,8] z[-19,-3]
-    walls:[ {x:0,z:-6,w:7,d:1,phase:true},           // gate
+    walls:[ {x:0,z:-6,w:7,d:1,breakable:true},           // gate
             {x:0,z:-12,w:1,d:10} ],                  // solid divider x[-0.5,0.5] z[-17,-7]
     gems:[ {x:0,z:-2}, {x:3,z:-7}, {x:5,z:-13}, {x:-4,z:-9}, {x:-6,z:-15} ],
-    start:{x:0,z:4}, goal:{x:-6,z:-15,r:1.5}, phaseCharges:1, medals:{g:13,s:19,b:28}, par:55 },
+    start:{x:0,z:4}, goal:{x:-6,z:-15,r:1.5}, medals:{g:13,s:19,b:28}, par:55 },
 
   // 3: gate, a railed bridge over the void, a cross-leg, then a gate near the goal.
   { name:'CROSSWIRE',
@@ -237,31 +241,31 @@ const LEVELS = [
             {x:0,z:-9,w:5,d:12},                     // bridge x[-2.5,2.5] z[-15,-3]
             {x:8,z:-13,w:16,d:6},                    // cross x[0,16] z[-16,-10]
             {x:13,z:-5,w:6,d:18} ],                  // up-leg x[10,16] z[-14,4]
-    walls:[ {x:0,z:-6,w:6,d:1,phase:true},           // gate 1
+    walls:[ {x:0,z:-6,w:6,d:1,breakable:true},           // gate 1
             {x:-3,z:-9,w:1,d:12}, {x:3,z:-9,w:1,d:12}, // bridge rails (x=±3)
-            {x:13,z:0,w:6,d:1,phase:true} ],         // gate 2
+            {x:13,z:0,w:6,d:1,breakable:true} ],         // gate 2
     gems:[ {x:0,z:-2},{x:0,z:-10},{x:5,z:-13},{x:10,z:-13},{x:13,z:-8},{x:13,z:1} ],
-    start:{x:0,z:3}, goal:{x:13,z:2.5,r:1.5}, phaseCharges:2, medals:{g:17,s:25,b:36}, par:70 },
+    start:{x:0,z:3}, goal:{x:13,z:2.5,r:1.5}, medals:{g:17,s:25,b:36}, par:70 },
 
   // 4: phase gate, then a slalom of alternating half-width walls down one corridor.
   { name:'SLALOM',
     plats:[ {x:0,z:-10,w:9,d:32} ],                  // x[-4.5,4.5] z[-26,6]
-    walls:[ {x:0,z:-2,w:9,d:1,phase:true},           // gate (full width)
+    walls:[ {x:0,z:-2,w:9,d:1,breakable:true},           // gate (full width)
             {x:-2.25,z:-8,w:4.5,d:1},                // blocks left  -> weave right
             {x:2.25,z:-14,w:4.5,d:1},                // blocks right -> weave left
             {x:-2.25,z:-20,w:4.5,d:1} ],             // blocks left  -> weave right
     gems:[ {x:0,z:1},{x:2.6,z:-8},{x:-2.6,z:-14},{x:2.6,z:-20},{x:0,z:-22} ],
-    start:{x:0,z:4}, goal:{x:0,z:-23,r:1.5}, phaseCharges:1, medals:{g:14,s:20,b:30}, par:50 },
+    start:{x:0,z:4}, goal:{x:0,z:-23,r:1.5}, medals:{g:14,s:20,b:30}, par:50 },
 
   // 5: a wide arena of pillars behind a gate, with a second gate guarding the goal.
   { name:'THE GAUNTLET',
     plats:[ {x:0,z:-10,w:22,d:26} ],                 // x[-11,11] z[-23,3]
-    walls:[ {x:0,z:-3,w:22,d:1,phase:true},          // entry gate (full width)
+    walls:[ {x:0,z:-3,w:22,d:1,breakable:true},          // entry gate (full width)
             {x:-5,z:-9,w:2,d:6}, {x:4,z:-7,w:6,d:2}, // pillars
             {x:-2,z:-15,w:8,d:2}, {x:7,z:-13,w:2,d:8},
-            {x:9,z:-16,w:8,d:1,phase:true} ],        // gate guarding the goal
+            {x:9,z:-16,w:8,d:1,breakable:true} ],        // gate guarding the goal
     gems:[ {x:0,z:-1},{x:-7,z:-6},{x:6,z:-10},{x:-6,z:-18},{x:2,z:-13},{x:9,z:-13} ],
-    start:{x:0,z:1}, goal:{x:9,z:-20,r:1.5}, phaseCharges:2, medals:{g:20,s:30,b:44}, par:75 },
+    start:{x:0,z:1}, goal:{x:9,z:-20,r:1.5}, medals:{g:20,s:30,b:44}, par:75 },
 ];
 
 // ---- Renderer / scene ----------------------------------------------------
@@ -403,7 +407,8 @@ const trailPts = [];
 const platMat = new THREE.MeshStandardMaterial({color:0x1c2f55, roughness:.8, metalness:.12, emissive:0x0a1426, emissiveIntensity:.4});
 const edgeMat = new THREE.LineBasicMaterial({color:0x37e6ff, transparent:true, opacity:.7});
 const wallMat = new THREE.MeshStandardMaterial({color:0x2a4d77, roughness:.6, emissive:0x0a2236, emissiveIntensity:.5});
-const phaseMatBase = {color:0xff4fd8, roughness:.3, transmission:.5, thickness:.4, transparent:true, opacity:.5, emissive:0xff4fd8, emissiveIntensity:.6};
+// breakable neon barrier (the dash target): glowing magenta, smashed by a turbo dash
+const barrierMatBase = {color:0xff4fd8, metalness:.2, roughness:.35, transparent:true, opacity:.62, emissive:0xff4fd8, emissiveIntensity:.7};
 
 let stage = null; // {plats:[], walls:[], gems:[], goal, group}
 
@@ -430,9 +435,11 @@ function addWall(w){
   const h = w.h||1.2;
   const geo = new THREE.BoxGeometry(w.w, h, w.d);
   let mesh;
-  if(w.phase){
-    const m = new THREE.MeshPhysicalMaterial(phaseMatBase);
+  if(w.breakable){
+    const m = new THREE.MeshStandardMaterial(barrierMatBase);
     mesh = new THREE.Mesh(geo, m);
+    const eg = new THREE.EdgesGeometry(geo);
+    mesh.add(new THREE.LineSegments(eg, new THREE.LineBasicMaterial({color:0xffffff,transparent:true,opacity:.5})));
   } else {
     mesh = new THREE.Mesh(geo, wallMat);
     const eg = new THREE.EdgesGeometry(geo);
@@ -441,7 +448,7 @@ function addWall(w){
   mesh.position.set(w.x, h/2, w.z);
   mesh.castShadow = true;
   world.add(mesh);
-  return {x:w.x,z:w.z,w:w.w,d:w.d,phase:!!w.phase,mesh};
+  return {x:w.x,z:w.z,w:w.w,d:w.d,h,breakable:!!w.breakable,broken:false,mesh};
 }
 
 // Banana-shaped collectible (a curved partial torus) — Monkey Ball's signature pickup.
@@ -668,8 +675,11 @@ const Audio = (()=>{
     banana(combo){ if(!ctx)return; const t=ctx.currentTime; const base=76+Math.min(combo,8);
       note(m2f(base),t,0.1,'triangle',0.4); note(m2f(base+5),t+0.05,0.12,'triangle',0.4);
       note(m2f(base+9),t+0.1,0.16,'square',0.3); },
-    phase(){ if(!ctx)return; const t=ctx.currentTime;
-      note(1200,t,0.4,'sawtooth',0.22,sfxGain,180); note(900,t,0.4,'sine',0.18,sfxGain,140); },
+    dash(){ if(!ctx)return; const t=ctx.currentTime;            // rising turbo whoosh
+      note(280,t,0.3,'sawtooth',0.3,sfxGain,1500); note(560,t,0.22,'square',0.16,sfxGain,1900); },
+    smash(){ if(!ctx)return; const t=ctx.currentTime;           // barrier shatter
+      note(140,t,0.2,'square',0.4,sfxGain,60); note(1000,t,0.14,'sawtooth',0.24,sfxGain,180);
+      note(700,t,0.1,'triangle',0.2,sfxGain,1400); },
     deny(){ if(!ctx)return; const t=ctx.currentTime; note(220,t,0.18,'square',0.3,sfxGain,120); },
     land(v){ if(!ctx)return; const t=ctx.currentTime; note(150,t,0.14,'sine',Math.min(0.5,0.12+v*0.04),sfxGain,70); },
     bump(){ if(!ctx)return; note(320, ctx.currentTime, 0.06,'sine',0.18,sfxGain,180); },
@@ -722,9 +732,9 @@ const QUIPS = {
   timeover: ["Time's up. The clock, at least, is decisive.",
              "Too slow. I aged waiting.",
              "TIME OVER. Sightseeing is not a strategy."],
-  noPhase: ["Out of phase, out of luck.",
-            "You spent those rather generously, didn't you.",
-            "No charges left. Improvise. Or don't."],
+  noEnergy: ["Turbo's dry. Stand there and think about it.",
+             "No boost. Try momentum, like an animal.",
+             "Empty. The meter refills. Patience does not."],
   allBananas: ["Every banana. Thorough. Also slow.",
                "A complete set. Nobody asked, but fine.",
                "You collected them all. The clock noticed."],
@@ -736,10 +746,10 @@ const QUIPS = {
           "Acceptable. Barely. Keep moving."],
   slow:  ["We have all day, apparently.",
           "Cleared — eventually. Glaciers took notes."],
-  noPhaseClear: ["A clean run, no phasing. Show-off.",
-                 "Zero charges spent. I almost respect that."],
+  efficient: ["Not one wasted boost. Suspiciously disciplined.",
+              "Clean energy management. Are you feeling okay?"],
   win:   ["Run complete. The Circuit is, briefly, satisfied.",
-          "You phased the whole thing. Don't let it go to your head.",
+          "You smashed through the whole thing. Don't let it go to your head.",
           "Finished. I'll alert the very small crowd."],
   idle:  ["Whenever you're ready.",
           "The ball won't roll itself. Oh, wait — it won't.",
@@ -764,9 +774,9 @@ function say(text, hold){
 // ---- Game state ----------------------------------------------------------
 const state = {
   running:false, stageIdx:0, time:0, shards:0, shardsTotal:0,
-  phaseCharges:0, phaseMax:0, phasing:0, // phasing = seconds remaining intangible
+  energy:1, dashing:0, dashUsed:0,  // turbo: energy meter (0..1), dash window, count
   best:LEVELS.map(()=>null), won:false,
-  score:0, combo:0, comboTimer:0, phaseUsed:0,
+  score:0, combo:0, comboTimer:0,
   intro:0, went:false, shake:0, squash:0, idle:0, idleFired:false,
   happy:0, dizzy:0, lastTick:99, attract:false,
 };
@@ -808,9 +818,9 @@ function loadStage(i, attract=false){
   stage.goal = addGoal(L.goal);
 
   state.shards = 0; state.shardsTotal = L.gems.length;
-  state.phaseMax = L.phaseCharges; state.phaseCharges = L.phaseCharges;
-  state.phasing = 0; state.time = 0; state.won = false;
-  state.combo = 0; state.comboTimer = 0; state.phaseUsed = 0;
+  state.energy = 1; state.dashing = 0; state.dashUsed = 0;
+  state.time = 0; state.won = false;
+  state.combo = 0; state.comboTimer = 0;
   state.idle = 0; state.idleFired = false;
   state.happy = 0; state.dizzy = 0; state.lastTick = 99;
 
@@ -862,8 +872,9 @@ function nextStage(){
   const medal = medalFor(i, state.time);
   const medalBonus = medal==='🥇'?500 : medal==='🥈'?300 : medal==='🥉'?150 : 0;
   const allBananas = state.shards===state.shardsTotal;
-  const noPhase = state.phaseUsed===0;
-  state.score += timeBonus + medalBonus + (allBananas?300:0) + (noPhase?400:0);
+  const gates = L.walls.filter(w=>w.breakable).length;
+  const efficient = state.dashUsed<=gates;   // no wasted boosts
+  state.score += timeBonus + medalBonus + (allBananas?300:0) + (efficient?400:0);
   document.getElementById('score').textContent = state.score;
 
   // ---- best time + ghost ----
@@ -876,13 +887,13 @@ function nextStage(){
 
   // ---- narrator reaction ----
   if(allBananas && Math.random()<0.6) quip('allBananas', 3000);
-  else if(noPhase && Math.random()<0.7) quip('noPhaseClear', 3000);
+  else if(efficient && Math.random()<0.6) quip('efficient', 3000);
   else if(medal==='🥇') quip('fast', 3000);
   else if(state.time>L.medals.b) quip('slow', 3000);
   else quip('clear', 3000);
 
   // hammy arcade callout, played against the Circuit's deadpan
-  const rank = (allBananas&&noPhase)?'PERFECT!' : (medal==='🥇')?'GREAT!' : allBananas?'NICE!' : 'STAGE CLEAR';
+  const rank = (allBananas&&efficient)?'PERFECT!' : (medal==='🥇')?'GREAT!' : allBananas?'NICE!' : 'STAGE CLEAR';
   flash(rank);
   if(rank==='PERFECT!') Audio.win(); else Audio.clear();
 
@@ -938,7 +949,7 @@ function setCountdownTick(n){
 const keys = {};
 addEventListener('keydown', e=>{
   keys[e.code]=true;
-  if(e.code==='Space'){ tryPhase(); e.preventDefault(); }
+  if(e.code==='Space'){ tryDash(); e.preventDefault(); }
   if(e.code==='KeyR') restartStage();
   if(e.code==='KeyM') setMute(Audio.toggleMute());
 });
@@ -957,12 +968,18 @@ function setMute(m){ document.getElementById('mute').textContent = m? '🔇' : '
 setMute(Audio.muted);
 document.getElementById('mute').onclick=()=>{ Audio.resume(); setMute(Audio.toggleMute()); };
 
-function tryPhase(){
+function tryDash(){
   if(!state.running) return;
-  if(state.phasing>0) return;
-  if(state.phaseCharges<=0){ flash('NO PHASE'); Audio.deny(); quip('noPhase', 2600); return; }
-  state.phaseCharges--; state.phaseUsed++; state.phasing = TUNE.phaseTime;
-  Audio.phase(); pulseVignette();
+  if(state.energy < TUNE.dashCost){ flash('NO TURBO'); Audio.deny(); quip('noEnergy', 2400); return; }
+  // dash direction: steering input > current velocity > camera heading
+  let dx, dz;
+  if(Math.abs(tiltTarget.x)+Math.abs(tiltTarget.z) > 0.1){ dx=tiltTarget.x; dz=tiltTarget.z; }
+  else if(Math.hypot(vel.x,vel.z) > 0.5){ dx=vel.x; dz=vel.z; }
+  else { dx=chx; dz=chz; }
+  const m=Math.hypot(dx,dz)||1; dx/=m; dz/=m;
+  vel.x += dx*TUNE.dashBoost; vel.z += dz*TUNE.dashBoost;
+  state.energy -= TUNE.dashCost; state.dashing = TUNE.dashTime; state.dashUsed++;
+  Audio.dash(); pulseVignette(); state.shake=Math.max(state.shake,0.16);
   updateHud();
 }
 
@@ -987,7 +1004,7 @@ if(matchMedia('(pointer:coarse)').matches){ document.body.classList.add('touch')
   stick.addEventListener('pointermove',e=>{ if(active) setNub(e.clientX-cx,e.clientY-cy); });
   function end(){ active=false; nub.style.left='35px'; nub.style.top='35px'; rawInput.x=0; rawInput.z=0; }
   stick.addEventListener('pointerup',end); stick.addEventListener('pointercancel',end);
-  document.getElementById('phaseBtn').addEventListener('pointerdown',e=>{e.preventDefault();tryPhase();});
+  document.getElementById('phaseBtn').addEventListener('pointerdown',e=>{e.preventDefault();tryDash();});
 })();
 
 // ---- Physics -------------------------------------------------------------
@@ -1005,27 +1022,33 @@ let lastBump=0;
 function resolveWalls(){
   const r=TUNE.radius;
   for(const w of stage.walls){
-    // Solid walls ALWAYS block. Magenta phase-walls block too — unless you're
-    // currently phasing, which is the whole point of the ability.
-    if(w.phase && state.phasing>0) continue;
+    if(w.broken) continue;                       // already smashed — no collision
     const hx=w.w/2, hz=w.d/2;
     const dx = pos.x - w.x, dz = pos.z - w.z;
     const cx = Math.max(-hx, Math.min(hx, dx));
     const cz = Math.max(-hz, Math.min(hz, dz));
     const nx = dx-cx, nz = dz-cz;
     const dist2 = nx*nx+nz*nz;
-    if(dist2 < r*r){
-      const dist = Math.sqrt(dist2)||0.0001;
-      const push = (r-dist);
-      const ux=nx/dist, uz=nz/dist;
-      pos.x += ux*push; pos.z += uz*push;
-      const vn = vel.x*ux + vel.z*uz;
-      if(vn<0){
-        vel.x -= (1+TUNE.wallRestitution)*vn*ux; vel.z -= (1+TUNE.wallRestitution)*vn*uz;
-        if(-vn>3 && t-lastBump>0.12){ Audio.bump(); lastBump=t; }
-      }
+    if(dist2 >= r*r) continue;                    // no contact
+    // Breakable barriers shatter if you hit them mid-dash; otherwise they block.
+    if(w.breakable && state.dashing>0){ breakWall(w); continue; }
+    const dist = Math.sqrt(dist2)||0.0001;
+    const push = (r-dist);
+    const ux=nx/dist, uz=nz/dist;
+    pos.x += ux*push; pos.z += uz*push;
+    const vn = vel.x*ux + vel.z*uz;
+    if(vn<0){
+      vel.x -= (1+TUNE.wallRestitution)*vn*ux; vel.z -= (1+TUNE.wallRestitution)*vn*uz;
+      if(-vn>3 && t-lastBump>0.12){ Audio.bump(); lastBump=t; }
     }
   }
+}
+
+function breakWall(w){
+  w.broken=true; if(w.mesh) w.mesh.visible=false;
+  burst(w.x, (w.h||1.2)*0.5, w.z, {count:30, color:0xff4fd8, speed:9, size:0.22, life:0.8, up:0.9});
+  burst(w.x, (w.h||1.2)*0.5, w.z, {count:14, color:0xffffff, speed:6, size:0.16, life:0.6, up:1.0});
+  Audio.smash(); state.shake=Math.max(state.shake,0.32);
 }
 
 let onGround=false;
@@ -1133,18 +1156,17 @@ function showCombo(n){
 }
 
 // ---- HUD -----------------------------------------------------------------
+const energyFill = document.getElementById('energyFill');
 function updateHud(){
   document.getElementById('shards').textContent = state.shards;
   const b = state.best[state.stageIdx];
   document.getElementById('best').textContent = b!=null? b.toFixed(2)+'s' : '—';
   document.getElementById('bestMedal').textContent = medalFor(state.stageIdx, b);
   document.getElementById('score').textContent = state.score;
-  const bars = document.getElementById('phasebars');
-  bars.innerHTML='';
-  for(let i=0;i<state.phaseMax;i++){
-    const d=document.createElement('div'); d.className='pb'+(i<state.phaseCharges?' on':'');
-    bars.appendChild(d);
-  }
+}
+function updateEnergyBar(){
+  energyFill.style.width = Math.max(0,Math.min(1,state.energy))*100 + '%';
+  energyFill.style.opacity = state.energy>=TUNE.dashCost ? 1 : 0.4;  // dim when too low to dash
 }
 
 // ---- Camera --------------------------------------------------------------
@@ -1236,8 +1258,9 @@ function frame(now){
       else { tEl.classList.remove('urgent'); state.lastTick=99; }
     }
 
-    // phase timer
-    if(state.phasing>0){ state.phasing=Math.max(0,state.phasing-dt); }
+    // turbo: dash window decays, energy recharges
+    if(state.dashing>0){ state.dashing=Math.max(0,state.dashing-dt); }
+    state.energy = Math.min(1, state.energy + TUNE.energyRegen*dt);
 
     // banana combo decay
     if(state.comboTimer>0){ state.comboTimer-=dt; if(state.comboTimer<=0) state.combo=0; }
@@ -1277,14 +1300,13 @@ function frame(now){
   const sq=state.squash;
   marbleSpin.scale.set(1+sq*0.35, 1-sq*0.45, 1+sq*0.35);
 
-  // phasing visual on the chrome marble: glow magenta + go translucent
-  const phaseActive = state.phasing>0;
-  marble.material.emissive.setHex(phaseActive?0xff4fd8:0x000000);
-  marble.material.emissiveIntensity = phaseActive? 1.2 : 1.0;
-  marble.material.metalness = phaseActive? 0.2 : 1.0;
-  marble.material.roughness = phaseActive? 0.3 : 0.06;
-  marble.material.transparent = phaseActive;
-  marble.material.opacity = phaseActive? 0.5 : 1.0;
+  // turbo-dash visual on the chrome marble: blaze cyan while the dash is hot
+  const dashActive = state.dashing>0;
+  marble.material.emissive.setHex(dashActive?0x37e6ff:0x000000);
+  marble.material.emissiveIntensity = dashActive? 1.6 : 1.0;
+  marbleGlow.color.setHex(dashActive?0x6ff0ff:0xff6fe0);
+  marbleGlow.intensity = dashActive? 2.4 : marbleGlow.intensity;
+  trail.material.opacity = dashActive? 0.95 : 0.6;
 
   // ---- face: expressions (glance, blink, shock, grin, dizzy) ----
   state.happy = Math.max(0, state.happy - dt);
@@ -1307,22 +1329,20 @@ function frame(now){
   else if(happy){ openY*=0.5; }                // squint-grin
   eyeL.scale.y = eyeR.scale.y = openY;
   eyeL.scale.x = eyeR.scale.x = openX;
-  pupilMat.color.setHex(phaseActive ? 0xff4fd8 : 0x101418);
-  // mouth: shocked "O" while falling, otherwise a smile that grows when happy/phasing
+  pupilMat.color.setHex(dashActive ? 0x37e6ff : 0x101418);
+  // mouth: shocked "O" while falling, otherwise a smile that grows when happy/dashing
   mouthO.visible = falling; mouthSmile.visible = !falling;
-  const sm = happy ? 1.5 : (phaseActive ? 1.2 : 1);
+  const sm = happy ? 1.5 : (dashActive ? 1.3 : 1);
   mouthSmile.scale.set(sm, sm, 1);
   // dizzy head wobble (eases back to upright)
   face.rotation.z = dizzy ? Math.sin(t*22)*0.35*state.dizzy : face.rotation.z*(1-Math.min(1,dt*10));
 
-  // phase-wall shimmer + open when phasing nearby
+  // breakable-barrier shimmer (brighter when a dash is hot — "smash me now")
   if(stage){
     for(const w of stage.walls){
-      if(!w.phase) continue;
-      const near = Math.hypot(pos.x-w.x,pos.z-w.z)<3;
-      const op = (phaseActive && near)? 0.12 : 0.5+0.15*Math.sin(t*3+w.x);
-      w.mesh.material.opacity = op;
-      w.mesh.material.emissiveIntensity = phaseActive? 1.1 : 0.6;
+      if(!w.breakable || w.broken) continue;
+      w.mesh.material.opacity = (dashActive? 0.8 : 0.62) + 0.12*Math.sin(t*3+w.x);
+      w.mesh.material.emissiveIntensity = dashActive? 1.3 : 0.7;
     }
   }
 
@@ -1363,6 +1383,7 @@ function frame(now){
   gridFloor.position.x = Math.round(camera.position.x/10)*10;
   gridFloor.position.z = Math.round(camera.position.z/10)*10;
   if(dustPts) dustPts.rotation.y += dt*0.015;
+  updateEnergyBar();
 
   if(composer) composer.render(); else renderer.render(scene, camera);
 }
@@ -1378,7 +1399,7 @@ addEventListener('resize', ()=>{
 });
 
 // expose harness for automated preview testing
-window.__game = { state, pos, vel, tilt, tiltTarget, startGame, loadStage, tryPhase, TUNE, LEVELS, Audio };
+window.__game = { state, pos, vel, tilt, tiltTarget, startGame, loadStage, tryDash, TUNE, LEVELS, Audio };
 </script>
 </body>
 </html>

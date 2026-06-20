@@ -1,11 +1,11 @@
 # PHASEBALL
 
-A tilt-the-world marble game (Super Monkey Ball-style) with a **phase-through-walls** twist,
+A tilt-the-world marble game (Super Monkey Ball-style) with a **turbo-dash** twist,
 dressed in a full **Outrun synthwave** look — banded sun on the horizon, chrome marble, neon
 grid, VHS scanlines — across **5 stages**, with a live attract-mode title and a results board.
 You don't steer the marble — you tilt the world and let gravity roll it home. Cyan walls
-block you; **magenta phase-walls** can be passed through by going intangible for a moment,
-but charges are limited per stage.
+block you; **magenta barriers** only shatter to a **turbo dash** (Space) — a burst of speed
+powered by a **recharging energy meter**, which doubles as a boost across gaps and the clock.
 
 The presentation leans **Monkey-Ball-arcade** — a "READY?… GO!" countdown, bouncy
 squash-and-stretch, **banana** pickups, screen shake, confetti, and a cheerful Web-Audio
@@ -14,13 +14,16 @@ soundtrack — all narrated by **the Circuit**, a dry, smug voice that quietly j
 **Play:** https://phaseball.vercel.app *(updates automatically on every push)*
 
 ## Character / feel
+- **Turbo dash** — tap Space (or the on-screen TURBO) for a burst of speed along your heading
+  that smashes through magenta barriers and flings you across gaps. Costs energy from a meter
+  that refills over time; tuned in `TUNE` (`dashBoost`, `dashCost`, `energyRegen`).
 - **Sound** — fully synthesized in the browser (no audio files): rolling rumble that tracks
-  speed, banana chimes that climb with your combo, a phase whoosh, fail/clear stings, and a
-  looping music bed. Toggle with **M** or the 🔊 button.
-- **Narrator** — "the Circuit" reacts to deaths, fast clears, wasted phase charges, idling,
-  and full-banana runs. Edit the `QUIPS` bank to change its personality.
-- **Juice** — countdown, screen shake, particle bursts, confetti at the goal, and a magenta
-  vignette flash when you phase.
+  speed, banana chimes that climb with your combo, a turbo whoosh, barrier smash, fail/clear
+  stings, and a looping music bed. Toggle with **M** or the 🔊 button.
+- **Narrator** — "the Circuit" reacts to deaths, fast clears, empty turbo, idling, and
+  full-banana runs. Edit the `QUIPS` bank to change its personality.
+- **Juice** — countdown, screen shake, particle bursts, confetti at the goal, barrier debris,
+  and a vignette flash when you dash.
 - **A face in the ball** — eyes that blink and glance where you're rolling, a grin when you
   grab a banana, a shocked "O" on a fall, and a dizzy spin after a hard landing.
 - **Chase camera** — the camera swings behind your direction of travel, with camera-relative
@@ -38,22 +41,23 @@ soundtrack — all narrated by **the Circuit**, a dry, smug voice that quietly j
 - **Results board** — finishing shows a per-stage breakdown of best times and medals, plus
   total time and score.
 - **Scoring & medals** — bananas pay out by combo; clears award time, medal (🥇/🥈/🥉),
-  full-banana, and no-phase bonuses. A faint **ghost** of your best run replays alongside you.
+  full-banana, and efficiency (no wasted boosts) bonuses. A faint **ghost** of your best run
+  replays alongside you.
 
 ## Controls
 - **W / A / S / D** or **arrow keys** — tilt the world
-- **Space** — phase (go intangible to roll through magenta walls)
+- **Space** — turbo dash (boost along your heading; smashes magenta barriers)
 - **R** — restart stage
 - **M** — mute / unmute
-- Mobile: on-screen stick + PHASE button (auto-detected)
+- Mobile: on-screen stick + TURBO button (auto-detected)
 
 ## Tech
 Single file, no build step. Three.js loaded from CDN via importmap. The whole game is in
 [`index.html`](index.html).
 
-- **Levels** are pure data in the `LEVELS` array near the top — platforms, walls, bananas,
-  goal, start, phase charges, and per-stage medal time targets (`medals:{g,s,b}`). Add a
-  stage by adding an object.
+- **Levels** are pure data in the `LEVELS` array near the top — platforms, walls (mark
+  `breakable:true` for a dash barrier), bananas, goal, start, per-stage medal time targets
+  (`medals:{g,s,b}`), and a `par`. Add a stage by adding an object.
 - **Feel** is tuned via the `TUNE` object at the very top (gravity, tilt, damping, camera,
   combo window).
 - **Personality** lives in the `QUIPS` bank (narrator lines) and the `Audio` module (all
