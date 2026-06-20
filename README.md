@@ -1,11 +1,11 @@
 # PHASEBALL
 
-A tilt-the-world marble game (Super Monkey Ball-style) with a **turbo-dash** twist,
-dressed in a full **Outrun synthwave** look — banded sun on the horizon, chrome marble, neon
-grid, VHS scanlines — across **5 stages**, with a live attract-mode title and a results board.
-You don't steer the marble — you tilt the world and let gravity roll it home. Cyan walls
-block you; **magenta barriers** only shatter to a **turbo dash** (Space) — a burst of speed
-powered by a **recharging energy meter**, which doubles as a boost across gaps and the clock.
+A **Super Monkey Ball-style** tilt-the-world marble game, dressed in a full **Outrun synthwave**
+look — banded sun on the horizon, chrome marble, neon grid, VHS scanlines — across **5 rolling
+courses**, with a live attract-mode title and a results board. You don't steer the marble — you
+tilt the world and let gravity roll it home: stay on the course through turns and narrow bridges,
+grab bananas, and reach the goal before the clock. Tap **Space** for an optional **turbo boost**
+(a recharging meter) to carry speed — a clean no-boost run scores higher.
 
 The presentation leans **Monkey-Ball-arcade** — a "READY?… GO!" countdown, bouncy
 squash-and-stretch, **banana** pickups, screen shake, confetti, and a cheerful Web-Audio
@@ -14,9 +14,9 @@ soundtrack — all narrated by **the Circuit**, a dry, smug voice that quietly j
 **Play:** https://phaseball.vercel.app *(updates automatically on every push)*
 
 ## Character / feel
-- **Turbo dash** — tap Space (or the on-screen TURBO) for a burst of speed along your heading
-  that smashes through magenta barriers and flings you across gaps. Costs energy from a meter
-  that refills over time; tuned in `TUNE` (`dashBoost`, `dashCost`, `energyRegen`).
+- **Turbo boost (optional)** — tap Space (or the on-screen TURBO) for a burst of speed along
+  your heading, from a meter that refills over time. No course requires it; a no-boost clear
+  scores higher. Tuned in `TUNE` (`dashBoost`, `dashCost`, `energyRegen`).
 - **Sound** — fully synthesized in the browser (no audio files): rolling rumble that tracks
   speed, banana chimes that climb with your combo, a turbo whoosh, barrier smash, fail/clear
   stings, and a looping music bed. Toggle with **M** or the 🔊 button.
@@ -56,7 +56,7 @@ soundtrack — all narrated by **the Circuit**, a dry, smug voice that quietly j
 
 ## Controls
 - **W / A / S / D** or **arrow keys** — tilt the world
-- **Space** — turbo dash (boost along your heading; smashes magenta barriers)
+- **Space** — turbo boost (optional speed burst along your heading)
 - **R** — restart stage
 - **M** — mute / unmute
 - Mobile: on-screen stick + TURBO + restart buttons (auto-detected); **Performance mode**
@@ -66,9 +66,10 @@ soundtrack — all narrated by **the Circuit**, a dry, smug voice that quietly j
 Single file, no build step. Three.js loaded from CDN via importmap. The whole game is in
 [`index.html`](index.html).
 
-- **Levels** are pure data in the `LEVELS` array near the top — platforms, walls (mark
-  `breakable:true` for a dash barrier), bananas, goal, start, per-stage medal time targets
-  (`medals:{g,s,b}`), and a `par`. Add a stage by adding an object.
+- **Levels** are pure data in the `LEVELS` array near the top — connected platforms, bananas,
+  goal, start, per-stage medal time targets (`medals:{g,s,b}`), and a `par`. Keep platforms
+  overlapping so the course has no gaps. (Walls still support `breakable:true` dash barriers if
+  you want to add one.) Add a stage by adding an object.
 - **Feel** is tuned via the `TUNE` object at the very top (gravity, tilt, damping, camera,
   combo window).
 - **Personality** lives in the `QUIPS` bank (narrator lines) and the `Audio` module (all

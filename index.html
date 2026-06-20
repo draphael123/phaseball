@@ -235,14 +235,14 @@
 
   <div id="center" class="panel">
     <h1>PHASEBALL</h1>
-    <div class="sub" id="subtitle">NEON CIRCUIT · TILT · TURBO · ROLL</div>
+    <div class="sub" id="subtitle">NEON CIRCUIT · TILT · ROLL · DON'T FALL</div>
     <div id="centerText">You don't steer the marble — you <b>tilt the world</b> and let gravity roll it home.
-      Cyan walls block you. <b style="color:var(--magenta)">Magenta barriers</b> only break to a
-      <b style="color:var(--cyan)">turbo dash</b> — hit <kbd>Space</kbd> to boost and smash through.
-      Your turbo recharges. Grab <b style="color:var(--gold)">bananas</b>, beat the clock.</div>
+      Stay on the course, grab <b style="color:var(--gold)">bananas</b>, and reach the goal before the
+      clock runs out. Tap <kbd>Space</kbd> for an optional <b style="color:var(--cyan)">turbo boost</b>
+      to carry speed — a clean no-boost run scores higher.</div>
     <div class="keys" id="keysHelp">
       <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows — tilt &nbsp;·&nbsp;
-      <kbd>Space</kbd> — turbo dash &nbsp;·&nbsp; <kbd>R</kbd> — restart &nbsp;·&nbsp; <kbd>M</kbd> — mute
+      <kbd>Space</kbd> — turbo boost &nbsp;·&nbsp; <kbd>R</kbd> — restart &nbsp;·&nbsp; <kbd>M</kbd> — mute
     </div>
     <div class="lvlhead">Select Stage</div>
     <div class="lvlsel" id="levelSelect"></div>
@@ -276,17 +276,17 @@ import * as THREE from 'three';
 const TUNE = {
   radius: 0.5,
   gravity: 26,         // downward accel for falling off edges
-  tiltAccel: 20,       // horizontal accel at full tilt
-  maxTilt: 0.22,       // radians the world visually leans
-  tiltLerp: 6,         // how fast tilt eases toward input
-  damping: 0.6,        // velocity damping per second (rolling resistance)
+  tiltAccel: 24,       // horizontal accel at full tilt (Monkey-Ball momentum)
+  maxTilt: 0.27,       // radians the world visually leans
+  tiltLerp: 7,         // how fast tilt eases toward input
+  damping: 0.5,        // velocity damping per second (lower = more carry/momentum)
   wallRestitution: 0.35,
   killY: -14,
-  dashBoost: 16,       // velocity impulse added by a turbo dash
-  dashTime: 0.32,      // seconds the dash window stays "hot" (can smash barriers)
+  dashBoost: 12,       // optional turbo boost impulse (the base roll is faster now)
+  dashTime: 0.32,      // seconds the dash window stays "hot"
   dashCost: 0.34,      // energy spent per dash (meter is 0..1)
   energyRegen: 0.34,   // energy refilled per second (≈3s to full)
-  visualLean: 0.10,    // how much of maxTilt the world visibly tilts
+  visualLean: 0.13,    // how much of maxTilt the world visibly tilts
   comboWindow: 2.6,    // seconds to keep a banana combo alive
   camFollow: true,     // camera swings behind travel + camera-relative controls
                        // (set false for a fixed camera + classic world-relative input)
@@ -294,52 +294,54 @@ const TUNE = {
 
 // ---- Level data ----------------------------------------------------------
 // plat: {x,z,w,d,[y=0]}  wall: {x,z,w,d,[h=1.2],breakable?}  gem:{x,z}
-// start:{x,z}  goal:{x,z,r}  medals:{g,s,b}  par:sec  dashPar:int
-// Breakable barriers shatter only mid-dash; gaps between platforms must be
-// cleared with a dash. dashPar = dashes expected for a clean run (efficiency bonus).
+// start:{x,z}  goal:{x,z,r}  medals:{g,s,b}  par:sec
+// Monkey-Ball rolling courses: connected platforms (no gaps), no walls. The
+// challenge is controlling momentum through turns and narrow bridges without
+// rolling off the edge, grabbing bananas, and beating the clock. The turbo
+// dash (Space) is an optional speed boost — no level requires it.
 const LEVELS = [
-  // 1: IGNITION — teach the dash by smashing one full-width barrier (flat, safe).
-  { name:'IGNITION',
-    plats:[ {x:0,z:-8,w:7,d:28} ],                       // x[-3.5,3.5] z[-22,6]
-    walls:[ {x:0,z:-8,w:7,d:1,breakable:true} ],         // barrier across the corridor
-    gems:[ {x:0,z:1}, {x:1.4,z:-4}, {x:-1.2,z:-12}, {x:0,z:-16} ],
-    start:{x:0,z:3}, goal:{x:0,z:-19,r:1.5}, medals:{g:9,s:13,b:20}, par:40, dashPar:1 },
+  // 1: ROLL OUT — a wide straight lane to learn the roll (very safe).
+  { name:'ROLL OUT',
+    plats:[ {x:0,z:-12,w:9,d:38} ],                      // x[-4.5,4.5] z[-31,7]
+    walls:[],
+    gems:[ {x:0,z:1},{x:2,z:-4},{x:-2,z:-9},{x:0,z:-14},{x:2,z:-19},{x:-2,z:-24} ],
+    start:{x:0,z:4}, goal:{x:0,z:-27,r:1.6}, medals:{g:7,s:11,b:17}, par:30 },
 
-  // 2: THE LEAP — teach dashing across a gap of open void.
-  { name:'THE LEAP',
-    plats:[ {x:0,z:2,w:8,d:12},                          // launch  x[-4,4]  z[-4,8]
-            {x:0,z:-22,w:10,d:16} ],                     // landing x[-5,5]  z[-30,-14]
-    walls:[],                                            // (gap z[-4,-14] ≈10u — dash to clear)
-    gems:[ {x:0,z:4}, {x:0,z:-1}, {x:0,z:-17}, {x:2.5,z:-22}, {x:0,z:-26} ],
-    start:{x:0,z:6}, goal:{x:0,z:-26,r:1.5}, medals:{g:9,s:14,b:21}, par:38, dashPar:1 },
+  // 2: THE BEND — a single 90° turn; carry speed without overshooting the edge.
+  { name:'THE BEND',
+    plats:[ {x:0,z:-6,w:8,d:26},                         // lane  x[-4,4]  z[-19,7]
+            {x:9,z:-16,w:18,d:8} ],                      // leg   x[0,18]  z[-20,-12]
+    walls:[],
+    gems:[ {x:0,z:1},{x:0,z:-8},{x:0,z:-15},{x:5,z:-16},{x:10,z:-16},{x:14,z:-16} ],
+    start:{x:0,z:4}, goal:{x:15,z:-16,r:1.6}, medals:{g:10,s:15,b:23}, par:36 },
 
-  // 3: AFTERBURN — a chain of barriers; manage the meter to smash all three.
-  { name:'AFTERBURN',
-    plats:[ {x:0,z:-12,w:8,d:34} ],                      // x[-4,4] z[-29,5]
-    walls:[ {x:0,z:-3,w:8,d:1,breakable:true},
-            {x:0,z:-11,w:8,d:1,breakable:true},
-            {x:0,z:-19,w:8,d:1,breakable:true} ],
-    gems:[ {x:0,z:1}, {x:0,z:-7}, {x:0,z:-15}, {x:0,z:-23} ],
-    start:{x:0,z:3}, goal:{x:0,z:-26,r:1.5}, medals:{g:11,s:16,b:24}, par:42, dashPar:3 },
+  // 3: SWITCHBACK — an S of three legs; two turns, a little narrower.
+  { name:'SWITCHBACK',
+    plats:[ {x:-6,z:-4,w:8,d:18},                        // leg1  x[-10,-2] z[-13,5]
+            {x:0,z:-13,w:16,d:7},                        // mid   x[-8,8]   z[-16.5,-9.5]
+            {x:6,z:-22,w:8,d:18} ],                      // leg2  x[2,10]   z[-31,-13]
+    walls:[],
+    gems:[ {x:-6,z:1},{x:-6,z:-9},{x:-2,z:-13},{x:4,z:-13},{x:6,z:-18},{x:6,z:-26} ],
+    start:{x:-6,z:3}, goal:{x:6,z:-28,r:1.6}, medals:{g:13,s:19,b:28}, par:42 },
 
-  // 4: OVERPASS — smash a barrier and clear the gap behind it in one boost.
-  { name:'OVERPASS',
-    plats:[ {x:0,z:2,w:8,d:12},                          // launch x[-4,4] z[-4,8]
-            {x:0,z:-20,w:12,d:16} ],                     // field  x[-6,6] z[-28,-12]
-    walls:[ {x:0,z:-1,w:8,d:1,breakable:true},           // barrier at the lip of the launch pad
-            {x:0,z:-16,w:12,d:1,breakable:true} ],       // barrier guarding the goal
-    gems:[ {x:0,z:5}, {x:0,z:-14}, {x:3,z:-20}, {x:-3,z:-19}, {x:0,z:-24} ],
-    start:{x:0,z:6}, goal:{x:0,z:-24,r:1.5}, medals:{g:13,s:19,b:28}, par:45, dashPar:3 },
+  // 4: THE NARROWS — wide → thin bridge → wide; control momentum on the rail.
+  { name:'THE NARROWS',
+    plats:[ {x:0,z:3,w:9,d:12},                          // entry  x[-4.5,4.5] z[-3,9]
+            {x:0,z:-11,w:4.2,d:18},                      // bridge x[-2.1,2.1] z[-20,-2]
+            {x:0,z:-25,w:10,d:14} ],                     // exit   x[-5,5]    z[-32,-18]
+    walls:[],
+    gems:[ {x:0,z:6},{x:0,z:-6},{x:0,z:-11},{x:0,z:-16},{x:0,z:-24},{x:0,z:-28} ],
+    start:{x:0,z:6}, goal:{x:0,z:-28,r:1.6}, medals:{g:12,s:18,b:27}, par:40 },
 
-  // 5: NEON MILE — the climax: barrier → leap → barrier chain → goal.
-  { name:'NEON MILE',
-    plats:[ {x:0,z:3,w:7,d:10},                          // launch x[-3.5,3.5] z[-2,8]
-            {x:0,z:-22,w:9,d:24} ],                      // long run x[-4.5,4.5] z[-34,-10]
-    walls:[ {x:0,z:0,w:7,d:1,breakable:true},            // barrier at the lip
-            {x:0,z:-16,w:9,d:1,breakable:true},          // chain on the long run
-            {x:0,z:-24,w:9,d:1,breakable:true} ],        // (gap z[-2,-10] ≈8u after the first)
-    gems:[ {x:0,z:5}, {x:0,z:-13}, {x:-2,z:-16}, {x:0,z:-20}, {x:2,z:-27}, {x:0,z:-31} ],
-    start:{x:0,z:6}, goal:{x:0,z:-31,r:1.5}, medals:{g:17,s:25,b:36}, par:55, dashPar:4 },
+  // 5: THE CIRCUIT — the climax: a long winding course with turns + a narrow leg.
+  { name:'THE CIRCUIT',
+    plats:[ {x:0,z:3,w:8,d:12},                          // lane    x[-4,4]   z[-3,9]
+            {x:0,z:-12,w:7,d:22},                        // run     x[-3.5,3.5] z[-23,-1]
+            {x:9,z:-20,w:14,d:6},                        // leg     x[2,16]   z[-23,-17]
+            {x:13,z:-9,w:6,d:18} ],                      // up-leg  x[10,16]  z[-18,0]
+    walls:[],
+    gems:[ {x:0,z:6},{x:0,z:-6},{x:0,z:-14},{x:0,z:-21},{x:6,z:-20},{x:13,z:-14},{x:13,z:-4} ],
+    start:{x:0,z:6}, goal:{x:13,z:-4,r:1.6}, medals:{g:18,s:26,b:38}, par:52 },
 ];
 
 // ---- Renderer / scene ----------------------------------------------------
@@ -857,8 +859,9 @@ const QUIPS = {
           "Acceptable. Barely. Keep moving."],
   slow:  ["We have all day, apparently.",
           "Cleared — eventually. Glaciers took notes."],
-  efficient: ["Not one wasted boost. Suspiciously disciplined.",
-              "Clean energy management. Are you feeling okay?"],
+  efficient: ["A pure tilt-roll clear. No turbo. Old-school.",
+              "Cleared without touching the boost. Purist.",
+              "Zero turbo used. The Circuit nods. Barely."],
   win:   ["Run complete. The Circuit is, briefly, satisfied.",
           "You smashed through the whole thing. Don't let it go to your head.",
           "Finished. I'll alert the very small crowd."],
@@ -998,8 +1001,7 @@ function nextStage(){
   const medal = medalFor(i, state.time);
   const medalBonus = medal==='🥇'?500 : medal==='🥈'?300 : medal==='🥉'?150 : 0;
   const allBananas = state.shards===state.shardsTotal;
-  const dashPar = L.dashPar ?? L.walls.filter(w=>w.breakable).length;
-  const efficient = state.dashUsed<=dashPar;   // no wasted boosts
+  const efficient = state.dashUsed===0;   // a pure tilt-roll clear (no turbo) — skill bonus
   state.score += timeBonus + medalBonus + (allBananas?300:0) + (efficient?400:0);
   document.getElementById('score').textContent = state.score;
 
@@ -1390,13 +1392,16 @@ function step(dt){
   const vyBefore = vel.y;
   const p = platUnder(pos.x, pos.z);
   const restY = p ? p.top+TUNE.radius : null;
-  if(restY!==null && pos.y<=restY+0.05 && vel.y<=0.001){
+  // A platform only supports you from on/above its top — never snap up from deep
+  // below (that side-teleport was the "phasing through the platform" jank).
+  const supported = restY!==null && pos.y >= restY-0.6;
+  if(supported && pos.y<=restY+0.05 && vel.y<=0.001){
     pos.y = restY; vel.y=0; onGround=true;
   } else {
     vel.y -= TUNE.gravity*dt;
     pos.y += vel.y*dt;
     onGround=false;
-    if(restY!==null && pos.y<restY){ pos.y=restY; vel.y=0; onGround=true; }
+    if(supported && pos.y<restY){ pos.y=restY; vel.y=0; onGround=true; }
   }
   // landing impact -> squash + thud (+ dizzy on a big drop)
   if(onGround && wasAir && vyBefore < -4){
