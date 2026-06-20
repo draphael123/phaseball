@@ -62,6 +62,9 @@ Single file, no build step. Three.js loaded from CDN via importmap. The whole ga
   combo window).
 - **Personality** lives in the `QUIPS` bank (narrator lines) and the `Audio` module (all
   sound) — both pure data/functions, easy to retune.
+- **Music** — drop a **CC0** loop at [`assets/music.ogg`](assets/) (and/or `.mp3`) and it
+  plays as the soundtrack through the mute/volume controls; with no file, the built-in synth
+  bed plays instead. See [`assets/README.md`](assets/README.md) for sources and tips.
 
 ## Editing on your phone
 1. Open this repo in the GitHub mobile app (or github.com in a browser).
