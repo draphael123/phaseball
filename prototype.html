@@ -142,13 +142,24 @@ function addGoal(p,r){
 }
 let goalRing=null, goalR=1.6;
 
-// ---- build the course --------------------------------------------------
-// One flat board (open edges = fall off). Kept simple so the *roll* is the
-// only thing to judge; contours/ramps come once the core feel is approved.
-addBox(8,0.5,18, [0,0,0], null, 0x16284a);               // board top at y=0.5
-addBanana([0,1.1,8]); addBanana([-2.5,1.1,3]); addBanana([2.5,1.1,-2]);
-addBanana([0,1.1,-7]); addBanana([-2,1.1,-12]);
-addGoal([0,0.5,-14], 1.6);
+// Ramp helper: builds an inclined box whose TOP edges land exactly on
+// (zA,yA) and (zB,yB) so seams with the flat pads match — no steps to hop on.
+// (forward = -z, so pass zA > zB; yA>yB descends, yA<yB climbs.)
+function addRamp(hx, xc, zA, yA, zB, yB, color){
+  const run=zA-zB, drop=yA-yB, a=Math.atan2(drop,run), hy=0.15;
+  const hz=Math.hypot(run,drop)/2, cz=(zA+zB)/2, cy=(yA+yB)/2 - hy*Math.cos(a);
+  addBox(hx, hy, hz, [xc, cy, cz], [-a,0,0], color);
+}
+
+// ---- build the course (pad tops at the noted y; ramps connect them) -------
+addBox(5,0.5,4, [0,-0.5,16], null, 0x16284a);   // P1 start pad  (top 0)
+addRamp(5,0, 12,0, 4,-3, 0x1c3358);             // ↓ down-ramp   (top 0 → -3)
+addBox(5,0.5,5, [0,-3.5,-1], null, 0x16284a);   // P2 flat run   (top -3)
+addRamp(5,0, -6,-3, -12,-1, 0x1c3358);          // ↑ up-ramp/hill(top -3 → -1)
+addBox(6,0.5,4, [0,-1.5,-16], null, 0x16284a);  // P3 goal pad   (top -1)
+addBanana([0,0.6,14]); addBanana([0,-0.9,8]); addBanana([0,-2.4,-1]);
+addBanana([0,-1.4,-10]); addBanana([0,-0.4,-16]);
+addGoal([0,-1,-16], 1.6);
 
 // ---- the ball ------------------------------------------------------------
 const ballBody = new CANNON.Body({ mass:1, shape:new CANNON.Sphere(TUNE.ballR), material:ballMat,
@@ -167,7 +178,7 @@ function eye(sx){ const g=new THREE.Group();
   g.add(w,p); g.position.set(sx,0.13,0.46); return g; }
 const face=new THREE.Group(); face.add(eye(-0.17),eye(0.17)); stageGroup.add(face);
 
-const START = new CANNON.Vec3(0,1.4,12);
+const START = new CANNON.Vec3(0,1.0,16);
 function reset(){
   ballBody.position.copy(START); ballBody.velocity.setZero(); ballBody.angularVelocity.setZero();
   ballBody.quaternion.set(0,0,0,1);
