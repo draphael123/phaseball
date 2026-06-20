@@ -19,6 +19,9 @@
   #timer.urgent{color:#ff5a6a;text-shadow:0 0 14px #ff2a44;animation:turg .5s infinite alternate}
   @keyframes turg{from{transform:scale(1)}to{transform:scale(1.12)}}
   #parLabel{font-size:11px;opacity:.55;letter-spacing:1px}
+  #mute{position:absolute;top:14px;left:50%;transform:translateX(-50%);pointer-events:auto;cursor:pointer;
+    font-size:18px;width:42px;height:42px;display:flex;align-items:center;justify-content:center;
+    background:rgba(10,16,34,.5);border:1px solid rgba(55,230,255,.3);border-radius:10px;user-select:none}
 
   #flash{position:absolute;top:26%;left:50%;transform:translateX(-50%) scale(.6);font-size:46px;font-weight:800;
     font-style:italic;letter-spacing:5px;color:#fff;opacity:0;text-shadow:0 0 22px var(--magenta),0 0 50px rgba(255,79,216,.6);white-space:nowrap}
@@ -75,6 +78,7 @@
   </div>
   <div id="flash"></div>
   <div id="countdown"><div id="cdBig">3</div><div id="cdSub"></div></div>
+  <div id="mute" title="Mute (M)">🔊</div>
   <div id="center" class="panel">
     <h1>PHASEBALL</h1>
     <div class="sub" id="subtitle">TILT THE STAGE · ROLL · DON'T FALL</div>
@@ -240,6 +244,56 @@ const LEVELS=[
       goal(0,-3,-24,1.6); } },
 ];
 
+// ---- audio (Web Audio synth + speed-tracked rolling + optional CC0 track) -
+const MUSIC_FILES=['assets/music.ogg','assets/music.mp3'];
+const Audio=(()=>{
+  let ctx=null,master,musicGain,sfxGain,rollGain,rollFilter,rollSrc;
+  let muted=localStorage.getItem('pb2_muted')==='1';
+  let trackGain=null,trackBuf=null,trackSrc=null,trackReady=false,trackTried=false;
+  let musicVol=0.85,sfxVol=0.9;
+  const music={on:false,next:0,step:0};
+  const PROG=[{bass:36,notes:[60,64,67,72]},{bass:31,notes:[59,62,67,71]},{bass:33,notes:[60,64,69,72]},{bass:29,notes:[60,65,69,72]}];
+  const m2f=m=>440*Math.pow(2,(m-69)/12);
+  function init(){ if(ctx)return; ctx=new (window.AudioContext||window.webkitAudioContext)();
+    master=ctx.createGain();master.gain.value=muted?0:0.9;master.connect(ctx.destination);
+    musicGain=ctx.createGain();musicGain.gain.value=0.16*musicVol;const mlp=ctx.createBiquadFilter();mlp.type='lowpass';mlp.frequency.value=2400;musicGain.connect(mlp);mlp.connect(master);
+    sfxGain=ctx.createGain();sfxGain.gain.value=0.7*sfxVol;sfxGain.connect(master);
+    trackGain=ctx.createGain();trackGain.gain.value=0.55*musicVol;trackGain.connect(master);
+    const buf=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate);const d=buf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+    rollSrc=ctx.createBufferSource();rollSrc.buffer=buf;rollSrc.loop=true;rollFilter=ctx.createBiquadFilter();rollFilter.type='lowpass';rollFilter.frequency.value=320;
+    rollGain=ctx.createGain();rollGain.gain.value=0;rollSrc.connect(rollFilter);rollFilter.connect(rollGain);rollGain.connect(sfxGain);rollSrc.start();
+  }
+  function resume(){ init(); if(ctx.state==='suspended')ctx.resume(); if(!trackTried)loadTrack(); }
+  async function loadTrack(){ trackTried=true; for(const url of MUSIC_FILES){ try{ const r=await fetch(url); if(!r.ok)continue;
+    trackBuf=await ctx.decodeAudioData(await r.arrayBuffer()); trackReady=true; if(music.on)playTrack(); return; }catch(e){} } }
+  function playTrack(){ if(!trackReady)return; stopTrack(); trackSrc=ctx.createBufferSource(); trackSrc.buffer=trackBuf; trackSrc.loop=true; trackSrc.connect(trackGain); trackSrc.start(); }
+  function stopTrack(){ if(trackSrc){ try{trackSrc.stop();}catch(e){} trackSrc.disconnect(); trackSrc=null; } }
+  function note(freq,t,dur,type,vol,dest,glide){ const o=ctx.createOscillator(),g=ctx.createGain();
+    o.type=type||'sine';o.frequency.setValueAtTime(freq,t);if(glide)o.frequency.exponentialRampToValueAtTime(glide,t+dur);
+    g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vol,t+0.012);g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g);g.connect(dest||sfxGain);o.start(t);o.stop(t+dur+0.02); }
+  function chord(fs,t,dur,type,vol,dest){ for(const f of fs)note(f,t,dur,type,vol,dest); }
+  return {
+    resume, get muted(){return muted;},
+    toggleMute(){ muted=!muted; localStorage.setItem('pb2_muted',muted?'1':'0'); if(master)master.gain.setTargetAtTime(muted?0:0.9,ctx.currentTime,0.05); return muted; },
+    go(){ if(!ctx)return; const t=ctx.currentTime; note(m2f(72),t,0.18,'square',0.5); note(m2f(79),t+0.05,0.3,'square',0.5); },
+    tick(n){ if(!ctx)return; note(m2f(67+n*2),ctx.currentTime,0.12,'square',0.35); },
+    banana(c){ if(!ctx)return; const t=ctx.currentTime,b=76+Math.min(c,8); note(m2f(b),t,0.1,'triangle',0.4); note(m2f(b+5),t+0.05,0.12,'triangle',0.4); note(m2f(b+9),t+0.1,0.16,'square',0.3); },
+    fall(){ if(!ctx)return; const t=ctx.currentTime; note(400,t,0.7,'sawtooth',0.3,sfxGain,60); note(402,t,0.7,'sine',0.2,sfxGain,62); },
+    clear(){ if(!ctx)return; const t=ctx.currentTime,seq=[60,64,67,72,76]; seq.forEach((n,i)=>chord([m2f(n),m2f(n+4)],t+i*0.09,0.3,'triangle',0.32)); },
+    win(){ if(!ctx)return; const t=ctx.currentTime,seq=[60,67,72,76,79,84]; seq.forEach((n,i)=>note(m2f(n),t+i*0.12,0.5,'square',0.34)); chord([m2f(60),m2f(64),m2f(67),m2f(72)],t+0.72,1.2,'triangle',0.3); },
+    ui(){ if(!ctx)return; note(m2f(72),ctx.currentTime,0.12,'square',0.3); },
+    roll(speed){ if(!ctx||!rollGain)return; rollGain.gain.setTargetAtTime(Math.min(0.5,speed*0.045),ctx.currentTime,0.08); rollFilter.frequency.setTargetAtTime(240+speed*120,ctx.currentTime,0.08); },
+    rollOff(){ if(rollGain)rollGain.gain.setTargetAtTime(0,ctx.currentTime,0.1); },
+    startMusic(){ if(!ctx)return; music.on=true; if(trackReady)playTrack(); else{ music.step=0; music.next=ctx.currentTime+0.1; } },
+    stopMusic(){ music.on=false; stopTrack(); },
+    pumpMusic(){ if(!ctx||!music.on||trackReady)return; const e=0.18;
+      while(music.next<ctx.currentTime+0.12){ const t=music.next,bar=Math.floor(music.step/8)%4,p=PROG[bar],s=music.step%8;
+        if(s%4===0)note(m2f(p.bass),t,0.34,'triangle',0.5,musicGain); if(s%2===0)note(m2f(p.bass+12),t,0.14,'sine',0.18,musicGain);
+        const mel=p.notes[s%p.notes.length]+(s>=4?12:0); note(m2f(mel),t,0.16,'square',0.12,musicGain); music.step++; music.next+=e; } },
+  };
+})();
+
 // ---- game state ----------------------------------------------------------
 const state={ running:false, stageIdx:0, time:0, bananas:0, bananaTot:0, intro:0, went:false,
   best:LEVELS.map(()=>null), won:false, lastTick:99 };
@@ -264,7 +318,7 @@ function loadStage(i){
   updateHud();
   state.running=false; state.intro=2.0; state.went=false; showCountdown(true); setCountdown(2);
 }
-function startGame(){ state.stageIdx=0; document.getElementById('center').classList.add('hidden'); loadStage(0); }
+function startGame(){ Audio.resume(); Audio.startMusic(); state.stageIdx=0; document.getElementById('center').classList.add('hidden'); loadStage(0); }
 function restartStage(){ if(state.intro>0||state.running) loadStage(state.stageIdx); }
 function nextStage(){
   const i=state.stageIdx, L=LEVELS[i];
@@ -274,7 +328,7 @@ function nextStage(){
   if(i>=LEVELS.length-1){ winGame(); return; }
   state.stageIdx++; loadStage(state.stageIdx);
 }
-function winGame(){ state.running=false; state.won=true; const c=document.getElementById('center'); c.classList.remove('hidden');
+function winGame(){ state.running=false; state.won=true; Audio.win(); const c=document.getElementById('center'); c.classList.remove('hidden');
   c.querySelector('h1').textContent='RUN COMPLETE'; document.getElementById('subtitle').textContent='ALL '+LEVELS.length+' STAGES';
   const tot=state.best.reduce((a,b)=>a+(b||0),0).toFixed(2);
   document.getElementById('centerText').innerHTML='You rolled the whole circuit in <b>'+tot+'s</b>.<br/>Best times saved — tighten your lines.';
@@ -289,10 +343,13 @@ function updateHud(){ document.getElementById('bananas').textContent=state.banan
 
 // ---- input (tilt) --------------------------------------------------------
 const keys={}, tilt={x:0,z:0}, tiltTarget={x:0,z:0};
-addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyR')restartStage();});
+addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyR')restartStage();if(e.code==='KeyM')setMute(Audio.toggleMute());});
 addEventListener('keyup',e=>keys[e.code]=false);
 document.getElementById('startBtn').onclick=()=>{const c=document.getElementById('center');
   c.querySelector('h1').textContent='PHASEBALL';document.getElementById('startBtn').textContent='Press Start';startGame();};
+function setMute(m){ document.getElementById('mute').textContent=m?'🔇':'🔊'; }
+setMute(Audio.muted);
+document.getElementById('mute').onclick=()=>{ Audio.resume(); setMute(Audio.toggleMute()); };
 // touch joystick -> tilt
 if(matchMedia('(pointer:coarse)').matches)document.body.classList.add('touch');
 (function(){const stick=document.getElementById('stick'),nub=document.getElementById('nub');let act=false,cx=0,cy=0;
@@ -313,8 +370,8 @@ function frame(now){
 
   // countdown
   if(state.intro>0){ const prev=state.intro; state.intro-=dt;
-    const nn=Math.max(0,Math.ceil(state.intro-1)); if(nn!==Math.max(0,Math.ceil(prev-1))&&state.intro>1)setCountdown(nn);
-    if(!state.went&&state.intro<=1){state.went=true;state.running=true;setCountdown(0);} if(state.intro<=0.4)showCountdown(false); }
+    const nn=Math.max(0,Math.ceil(state.intro-1)); if(nn!==Math.max(0,Math.ceil(prev-1))&&state.intro>1){setCountdown(nn);Audio.tick(2-nn);}
+    if(!state.went&&state.intro<=1){state.went=true;state.running=true;setCountdown(0);Audio.go();} if(state.intro<=0.4)showCountdown(false); }
 
   // input -> eased tilt
   if(!document.body.classList.contains('touch')){ let ix=0,iz=0;
@@ -332,6 +389,7 @@ function frame(now){
   ballMesh.position.copy(ballBody.position); ballMesh.quaternion.copy(ballBody.quaternion);
   const sp=Math.hypot(ballBody.velocity.x,ballBody.velocity.z);
   face.position.copy(ballBody.position); if(sp>0.3)face.rotation.y=Math.atan2(ballBody.velocity.x,ballBody.velocity.z);
+  if(state.running)Audio.roll(sp); else Audio.rollOff(); Audio.pumpMusic();
 
   if(state.running){
     state.time+=dt; const tEl=document.getElementById('timer'); tEl.textContent=state.time.toFixed(2);
@@ -339,12 +397,12 @@ function frame(now){
     if(rem<=8){tEl.classList.add('urgent');const s=Math.ceil(Math.max(0,rem));if(s!==state.lastTick)state.lastTick=s;} else{tEl.classList.remove('urgent');state.lastTick=99;}
     // bananas (flat-space distance is rotation-invariant)
     for(const g of gems){ if(g.got)continue; g.mesh.rotation.y+=dt*2; g.mesh.position.y=g.base+Math.sin(t*2+g.local.x)*0.12;
-      if(g.local.distanceTo(ballBody.position)<0.85){g.got=true;g.mesh.visible=false;state.bananas++;updateHud();} }
+      if(g.local.distanceTo(ballBody.position)<0.85){g.got=true;g.mesh.visible=false;state.bananas++;Audio.banana(state.bananas);updateHud();} }
     // goal
-    if(goalRing && clear<=0 && goalLocal.distanceTo(ballBody.position)<goalR+0.2){ clear=0.7; state.running=false; }
+    if(goalRing && clear<=0 && goalLocal.distanceTo(ballBody.position)<goalR+0.2){ clear=0.7; state.running=false; Audio.clear(); }
     // fall / time over
-    if(ballBody.position.y<TUNE.killY){ flash('FELL'); loadStage(state.stageIdx); }
-    else if(rem<=0){ flash('TIME OVER'); loadStage(state.stageIdx); }
+    if(ballBody.position.y<TUNE.killY){ flash('FELL'); Audio.fall(); loadStage(state.stageIdx); }
+    else if(rem<=0){ flash('TIME OVER'); Audio.fall(); loadStage(state.stageIdx); }
   }
   if(clear>0){ clear-=dt; if(clear<=0) nextStage(); }
   if(goalRing) goalRing.rotation.z+=dt*1.2;
