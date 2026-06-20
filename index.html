@@ -266,6 +266,9 @@ const mouthMat=new THREE.MeshBasicMaterial({color:0x101418});
 const mouth=new THREE.Mesh(new THREE.TorusGeometry(.12,.028,8,20,Math.PI),mouthMat); mouth.rotation.z=Math.PI; mouth.position.set(0,-.1,.47);
 const face=new THREE.Group(); face.add(eyeL,eyeR,mouth); stageGroup.add(face);
 let hatMesh=null,rainbowOn=false,blink=2,blinkT=0;
+// ghost of your best run (rides the rotated stage group like the ball)
+const ghost=new THREE.Mesh(new THREE.SphereGeometry(TUNE.ballR,20,20),new THREE.MeshBasicMaterial({color:0xbfefff,transparent:true,opacity:0.16,depthWrite:false}));
+ghost.visible=false; stageGroup.add(ghost);
 
 // ---- build helpers -------------------------------------------------------
 const edgeMat=new THREE.LineBasicMaterial({color:0x37e6ff,transparent:true,opacity:.6});
@@ -451,6 +454,9 @@ const state={ running:false, stageIdx:0, time:0, bananas:0, bananaTot:0, intro:0
   best:LEVELS.map(()=>null), score:0, combo:0, comboTimer:0, shake:0, happy:0, idle:0, idleFired:false, lastTick:99, squash:0 };
 try{const b=JSON.parse(localStorage.getItem('pb2_best')||'[]');if(Array.isArray(b))state.best=b;}catch(e){} while(state.best.length<LEVELS.length)state.best.push(null);
 let attractAngle=0; const attractCenter=new THREE.Vector3();
+let ghostData=LEVELS.map(()=>null);
+try{const g=JSON.parse(localStorage.getItem('pb2_ghost')||'[]');if(Array.isArray(g))ghostData=g;}catch(e){} while(ghostData.length<LEVELS.length)ghostData.push(null);
+let rec=[],recT=0,ghostPlay=null,ghostIdx=0;
 
 function clearCourse(){ while(courseGroup.children.length)courseGroup.remove(courseGroup.children[0]); gems.length=0; goalRing=null; goalBanner=null; }
 function loadStage(i){
@@ -461,6 +467,7 @@ function loadStage(i){
   state.bananas=0; state.bananaTot=gems.length; state.time=0; state.won=false; state.lastTick=99; state.combo=0; state.comboTimer=0; state.idle=0; state.idleFired=false;
   ballBody.position.set(L.start.x,1.2,L.start.z); ballBody.velocity.setZero(); ballBody.angularVelocity.setZero(); ballBody.quaternion.set(0,0,0,1);
   tilt.x=tilt.z=0; tiltTarget.x=tiltTarget.z=0;
+  rec=[]; recT=0; ghostPlay=(ghostData[i]&&ghostData[i].length)?ghostData[i]:null; ghostIdx=0; ghost.visible=false;
   document.getElementById('stageNum').textContent=i+1; document.getElementById('bananaTot').textContent=state.bananaTot;
   document.getElementById('parLabel').textContent='PAR '+L.par+'s'; document.getElementById('best').textContent=state.best[i]!=null?state.best[i].toFixed(2)+'s':'—';
   document.getElementById('bestMedal').textContent=medalFor(i,state.best[i]); document.getElementById('timer').classList.remove('urgent');
@@ -475,7 +482,8 @@ function nextStage(){
   const timeBonus=Math.max(0,Math.round((L.medals.b-state.time)*10)); const medal=medalFor(i,state.time);
   const mb=medal==='🥇'?500:medal==='🥈'?300:medal==='🥉'?150:0; const all=state.bananas===state.bananaTot;
   state.score+=timeBonus+mb+(all?300:0); document.getElementById('score').textContent=state.score;
-  if(state.best[i]==null||state.time<state.best[i]){state.best[i]=+state.time.toFixed(2);localStorage.setItem('pb2_best',JSON.stringify(state.best));}
+  if(state.best[i]==null||state.time<state.best[i]){state.best[i]=+state.time.toFixed(2);localStorage.setItem('pb2_best',JSON.stringify(state.best));
+    ghostData[i]=rec; try{localStorage.setItem('pb2_ghost',JSON.stringify(ghostData));}catch(e){}}
   if(all&&!bestFull[i]){bestFull[i]=true;localStorage.setItem('pb2_full',JSON.stringify(bestFull));}
   if(all&&Math.random()<0.6)quip('allBananas',2800); else if(medal==='🥇')quip('fast',2800); else if(state.time>L.medals.b)quip('slow',2800); else quip('clear',2800);
   const rank=(all&&medal==='🥇')?'PERFECT!':(medal==='🥇')?'GREAT!':all?'NICE!':'STAGE CLEAR'; flash(rank);
@@ -526,7 +534,8 @@ document.getElementById('setShake').onclick=()=>{settings.shake=!settings.shake;
 document.getElementById('setScan').onclick=()=>{settings.retro=!settings.retro;applySettings();saveSettings();};
 document.getElementById('setPerf').onclick=()=>{settings.perf=!settings.perf;applySettings();saveSettings();};
 document.getElementById('setReset').onclick=()=>{ if(!confirm('Reset all best times and stars?'))return;
-  state.best=LEVELS.map(()=>null); bestFull=LEVELS.map(()=>false); localStorage.removeItem('pb2_best');localStorage.removeItem('pb2_full');
+  state.best=LEVELS.map(()=>null); bestFull=LEVELS.map(()=>false); ghostData=LEVELS.map(()=>null);
+  localStorage.removeItem('pb2_best');localStorage.removeItem('pb2_full');localStorage.removeItem('pb2_ghost');
   populateLevelSelect();populateCustomize();updateHud(); };
 if(matchMedia('(pointer:coarse)').matches)document.body.classList.add('touch');
 (function(){const stick=document.getElementById('stick'),nub=document.getElementById('nub');let act=false,cx=0,cy=0;
@@ -575,6 +584,7 @@ function frame(now){ requestAnimationFrame(frame); let dt=(now-last)/1000;last=n
     const rem=LEVELS[state.stageIdx].par-state.time;
     if(rem<=8){tEl.classList.add('urgent');const s=Math.ceil(Math.max(0,rem));if(s!==state.lastTick){state.lastTick=s;if(s>0)Audio.tick(0);}}else{tEl.classList.remove('urgent');state.lastTick=99;}
     if(state.comboTimer>0){state.comboTimer-=dt;if(state.comboTimer<=0)state.combo=0;}
+    recT+=dt; if(recT>=0.05){recT=0; rec.push([+state.time.toFixed(3),+ballBody.position.x.toFixed(3),+ballBody.position.y.toFixed(3),+ballBody.position.z.toFixed(3)]);}
     for(const g of gems){ if(g.got)continue; g.mesh.rotation.y+=dt*2; g.mesh.position.y=g.base+Math.sin(t*2+g.local.x)*0.12;
       if(g.local.distanceTo(ballBody.position)<0.85){ g.got=true;g.mesh.visible=false;state.bananas++;state.combo++;state.comboTimer=2.6;state.happy=0.6;
         state.score+=100*state.combo; Audio.banana(state.combo); _v.copy(g.local).applyQuaternion(qTilt); burst(_v.x,_v.y,_v.z,{count:14,color:0xffd24a,speed:5,size:.16,life:.6});
@@ -588,6 +598,14 @@ function frame(now){ requestAnimationFrame(frame); let dt=(now-last)/1000;last=n
   }
   if(clear>0){clear-=dt;if(clear<=0)nextStage();}
   if(goalRing)goalRing.rotation.z+=dt*1.2;
+
+  // ghost replay of your best run (flat-space; rides the rotated stage group)
+  if(ghostPlay&&state.running&&!state.paused){
+    while(ghostIdx<ghostPlay.length-1&&ghostPlay[ghostIdx+1][0]<state.time)ghostIdx++;
+    const a=ghostPlay[ghostIdx],b=ghostPlay[Math.min(ghostIdx+1,ghostPlay.length-1)]; let gx=a[1],gy=a[2],gz=a[3];
+    if(b!==a){const s2=b[0]-a[0],f=s2>0?Math.min(1,Math.max(0,(state.time-a[0])/s2)):0;gx=a[1]+(b[1]-a[1])*f;gy=a[2]+(b[2]-a[2])*f;gz=a[3]+(b[3]-a[3])*f;}
+    ghost.position.set(gx,gy,gz); ghost.visible=state.time<=ghostPlay[ghostPlay.length-1][0]+0.5;
+  } else if(!state.running||state.attract){ ghost.visible=false; }
 
   // hard-landing dust + camera kick
   { const vy=ballBody.velocity.y; if(state.running&&!state.paused&&prevVy<-7&&vy>-3){
