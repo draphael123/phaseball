@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>PHASEBALL</title>
+<style>
+  :root{
+    --cyan:#37e6ff; --magenta:#ff4fd8; --bg0:#070912; --bg1:#0c1226; --ink:#dbe7ff;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  html,body{height:100%; overflow:hidden; background:var(--bg0); font-family:"Segoe UI",system-ui,sans-serif; color:var(--ink); touch-action:none;}
+  #app{position:fixed; inset:0}
+  canvas{display:block}
+
+  /* HUD */
+  #hud{position:fixed; inset:0; pointer-events:none; z-index:5}
+  .panel{position:absolute; padding:10px 14px; background:rgba(10,16,34,.55);
+    border:1px solid rgba(55,230,255,.25); border-radius:12px; backdrop-filter:blur(6px);
+    text-shadow:0 0 8px rgba(55,230,255,.4);}
+  #topleft{top:14px; left:14px; font-size:14px; line-height:1.5}
+  #topleft b{color:var(--cyan); font-weight:700}
+  #topright{top:14px; right:14px; font-size:14px; text-align:right; line-height:1.5}
+  #timer{font-variant-numeric:tabular-nums; font-size:22px; color:#fff}
+  .phasebars{display:flex; gap:6px; margin-top:6px; justify-content:flex-end}
+  .pb{width:26px; height:8px; border-radius:4px; background:rgba(255,79,216,.18);
+    border:1px solid rgba(255,79,216,.5)}
+  .pb.on{background:var(--magenta); box-shadow:0 0 10px var(--magenta)}
+
+  #center{top:50%; left:50%; transform:translate(-50%,-50%); text-align:center;
+    pointer-events:auto; min-width:280px}
+  #center h1{font-size:40px; letter-spacing:6px; color:#fff;
+    text-shadow:0 0 18px var(--cyan),0 0 40px rgba(55,230,255,.5); margin-bottom:6px}
+  #center .sub{color:var(--cyan); letter-spacing:3px; font-size:13px; margin-bottom:16px}
+  #center p{font-size:14px; line-height:1.7; opacity:.9; margin-bottom:16px}
+  #center .keys{font-size:12px; opacity:.7; line-height:1.9; margin-bottom:18px}
+  #center .keys kbd{display:inline-block; min-width:20px; padding:2px 7px; margin:0 2px;
+    background:rgba(55,230,255,.12); border:1px solid rgba(55,230,255,.4); border-radius:6px;
+    font-family:inherit; color:#fff}
+  .btn{pointer-events:auto; cursor:pointer; display:inline-block; padding:12px 30px;
+    font-size:15px; letter-spacing:3px; color:#04121a; font-weight:700;
+    background:linear-gradient(180deg,#6ff0ff,#1fb6d6); border:none; border-radius:30px;
+    box-shadow:0 0 24px rgba(55,230,255,.6); text-transform:uppercase}
+  .btn:active{transform:translateY(1px)}
+  .hidden{display:none !important}
+
+  #flash{position:absolute; top:30%; left:50%; transform:translateX(-50%);
+    font-size:34px; letter-spacing:5px; color:#fff; opacity:0; text-align:center;
+    text-shadow:0 0 20px var(--magenta); transition:opacity .25s}
+
+  /* Mobile controls */
+  #touch{position:fixed; inset:0; z-index:4; display:none}
+  #stick{position:absolute; left:30px; bottom:30px; width:130px; height:130px;
+    border-radius:50%; border:1px solid rgba(55,230,255,.4); background:rgba(10,16,34,.4)}
+  #nub{position:absolute; left:35px; top:35px; width:60px; height:60px; border-radius:50%;
+    background:rgba(55,230,255,.5); box-shadow:0 0 16px var(--cyan)}
+  #phaseBtn{position:absolute; right:30px; bottom:46px; width:110px; height:110px;
+    border-radius:50%; background:rgba(255,79,216,.25); border:2px solid var(--magenta);
+    color:#fff; font-size:14px; letter-spacing:2px; box-shadow:0 0 18px rgba(255,79,216,.5);
+    display:flex; align-items:center; justify-content:center; pointer-events:auto}
+  body.touch #touch{display:block}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="hud">
+  <div id="topleft" class="panel">
+    Stage <b id="stageNum">1</b> / 3<br/>
+    Shards <b id="shards">0</b>/<b id="shardsTot">0</b><br/>
+    Best <b id="best">—</b>
+  </div>
+  <div id="topright" class="panel">
+    <div id="timer">0.00</div>
+    <div style="font-size:11px;opacity:.7;letter-spacing:2px">PHASE</div>
+    <div class="phasebars" id="phasebars"></div>
+  </div>
+
+  <div id="flash"></div>
+
+  <div id="center" class="panel">
+    <h1>PHASEBALL</h1>
+    <div class="sub" id="subtitle">TILT THE WORLD · PHASE THE WALLS</div>
+    <p id="centerText">You don't steer the marble — you <b>tilt the world</b> and let gravity roll it home.<br/>
+      Cyan walls block you. <b style="color:var(--magenta)">Magenta phase-walls</b> can be passed through —
+      hit <kbd>Space</kbd> to go intangible for a moment. Charges are limited per stage.</p>
+    <div class="keys" id="keysHelp">
+      <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows — tilt &nbsp;·&nbsp;
+      <kbd>Space</kbd> — phase &nbsp;·&nbsp; <kbd>R</kbd> — restart stage
+    </div>
+    <button class="btn" id="startBtn">Start</button>
+  </div>
+</div>
+
+<div id="touch">
+  <div id="stick"><div id="nub"></div></div>
+  <div id="phaseBtn">PHASE</div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+// ---------------------------------------------------------------------------
+// PHASEBALL — a tilt-the-world marble game with a phase-through-walls twist.
+// Physics model: the stage stays flat; player input tilts gravity (the classic
+// Monkey Ball equivalence), which we also render as a subtle visual world-lean.
+// ---------------------------------------------------------------------------
+
+const TUNE = {
+  radius: 0.5,
+  gravity: 26,         // downward accel for falling off edges
+  tiltAccel: 20,       // horizontal accel at full tilt
+  maxTilt: 0.22,       // radians the world visually leans
+  tiltLerp: 6,         // how fast tilt eases toward input
+  damping: 0.6,        // velocity damping per second (rolling resistance)
+  wallRestitution: 0.35,
+  killY: -14,
+  phaseTime: 1.1,      // seconds intangible per charge
+  visualLean: 0.10,    // how much of maxTilt the world visibly tilts
+};
+
+// ---- Level data ----------------------------------------------------------
+// plat: {x,z,w,d,[y=0]}  wall: {x,z,w,d,[h=1.2],phase?}  gem:{x,z}
+// start:{x,z}  goal:{x,z,r}
+const LEVELS = [
+  // 1: teach rolling + a single full-width phase gate you MUST pass through.
+  { name:'WARMUP',
+    plats:[ {x:0,z:-8,w:7,d:28} ],                  // x[-3.5,3.5] z[-22,6]
+    walls:[ {x:0,z:-8,w:7,d:1,phase:true} ],         // gate spans the whole corridor at z=-8
+    gems:[ {x:0,z:1}, {x:1.4,z:-4}, {x:-1.2,z:-12}, {x:0,z:-16} ],
+    start:{x:0,z:3}, goal:{x:0,z:-19,r:1.5}, phaseCharges:1 },
+
+  // 2: phase gate, then a solid wall you must route around to reach the goal.
+  { name:'THE DIVIDE',
+    plats:[ {x:0,z:0,w:7,d:10},                      // entry x[-3.5,3.5] z[-5,5]
+            {x:0,z:-11,w:16,d:16} ],                 // field x[-8,8] z[-19,-3]
+    walls:[ {x:0,z:-6,w:7,d:1,phase:true},           // gate
+            {x:0,z:-12,w:1,d:10} ],                  // solid divider x[-0.5,0.5] z[-17,-7]
+    gems:[ {x:0,z:-2}, {x:3,z:-7}, {x:5,z:-13}, {x:-4,z:-9}, {x:-6,z:-15} ],
+    start:{x:0,z:4}, goal:{x:-6,z:-15,r:1.5}, phaseCharges:1 },
+
+  // 3: gate, a railed bridge over the void, a cross-leg, then a gate near the goal.
+  { name:'CROSSWIRE',
+    plats:[ {x:0,z:0,w:6,d:8},                       // entry z[-4,4]
+            {x:0,z:-9,w:5,d:12},                     // bridge x[-2.5,2.5] z[-15,-3]
+            {x:8,z:-13,w:16,d:6},                    // cross x[0,16] z[-16,-10]
+            {x:13,z:-5,w:6,d:18} ],                  // up-leg x[10,16] z[-14,4]
+    walls:[ {x:0,z:-6,w:6,d:1,phase:true},           // gate 1
+            {x:-3,z:-9,w:1,d:12}, {x:3,z:-9,w:1,d:12}, // bridge rails (x=±3)
+            {x:13,z:0,w:6,d:1,phase:true} ],         // gate 2
+    gems:[ {x:0,z:-2},{x:0,z:-10},{x:5,z:-13},{x:10,z:-13},{x:13,z:-8},{x:13,z:1} ],
+    start:{x:0,z:3}, goal:{x:13,z:2.5,r:1.5}, phaseCharges:2 },
+];
+
+// ---- Renderer / scene ----------------------------------------------------
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x070912);
+scene.fog = new THREE.FogExp2(0x070912, 0.018);
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 400);
+
+// lights
+scene.add(new THREE.HemisphereLight(0x335577, 0x05070f, 0.7));
+const key = new THREE.DirectionalLight(0xbfe9ff, 1.1);
+key.position.set(8, 18, 8); key.castShadow = true;
+key.shadow.mapSize.set(2048,2048);
+const sc = key.shadow.camera; sc.near=1; sc.far=80; sc.left=-30; sc.right=30; sc.top=30; sc.bottom=-30;
+scene.add(key);
+const rim = new THREE.PointLight(0xff4fd8, 0.6, 60); rim.position.set(-6,6,4); scene.add(rim);
+
+// starfield
+(function stars(){
+  const g = new THREE.BufferGeometry(); const n=600, p=new Float32Array(n*3);
+  for(let i=0;i<n;i++){ p[i*3]=(Math.random()-.5)*260; p[i*3+1]=Math.random()*80-10; p[i*3+2]=(Math.random()-.5)*260; }
+  g.setAttribute('position', new THREE.BufferAttribute(p,3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({color:0x66ccff,size:.35,transparent:true,opacity:.7})));
+})();
+
+// world group (what we visually tilt)
+const world = new THREE.Group();
+scene.add(world);
+
+// ---- Marble --------------------------------------------------------------
+const marble = new THREE.Mesh(
+  new THREE.SphereGeometry(TUNE.radius, 40, 40),
+  new THREE.MeshPhysicalMaterial({
+    color:0x9fe9ff, metalness:0, roughness:0.05, transmission:0.9, thickness:0.6,
+    clearcoat:1, clearcoatRoughness:0.05, ior:1.4,
+    emissive:0x123040, emissiveIntensity:0.4,
+  })
+);
+marble.castShadow = true;
+const marbleGlow = new THREE.PointLight(0x6fe9ff, 0.8, 8); marble.add(marbleGlow);
+scene.add(marble); // marble lives in scene space (not tilted group) for clean physics
+
+// trail
+const TRAIL_N = 24;
+const trailGeo = new THREE.BufferGeometry();
+trailGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_N*3),3));
+const trail = new THREE.Line(trailGeo, new THREE.LineBasicMaterial({color:0x6fe9ff,transparent:true,opacity:.5}));
+scene.add(trail);
+const trailPts = [];
+
+// ---- Build helpers -------------------------------------------------------
+const platMat = new THREE.MeshStandardMaterial({color:0x14223f, roughness:.85, metalness:.1});
+const edgeMat = new THREE.LineBasicMaterial({color:0x37e6ff, transparent:true, opacity:.55});
+const wallMat = new THREE.MeshStandardMaterial({color:0x2a4d77, roughness:.6, emissive:0x0a2236, emissiveIntensity:.5});
+const phaseMatBase = {color:0xff4fd8, roughness:.3, transmission:.5, thickness:.4, transparent:true, opacity:.5, emissive:0xff4fd8, emissiveIntensity:.6};
+
+let stage = null; // {plats:[], walls:[], gems:[], goal, group}
+
+function clearWorld(){
+  while(world.children.length) world.remove(world.children[0]);
+}
+
+function addPlatform(p){
+  const h=1;
+  const geo = new THREE.BoxGeometry(p.w, h, p.d);
+  const m = new THREE.Mesh(geo, platMat);
+  m.position.set(p.x, (p.y||0)-h/2, p.z);
+  m.receiveShadow = true;
+  world.add(m);
+  // neon top edge
+  const eg = new THREE.EdgesGeometry(new THREE.BoxGeometry(p.w,0.02,p.d));
+  const e = new THREE.LineSegments(eg, edgeMat);
+  e.position.set(p.x,(p.y||0)+0.01,p.z);
+  world.add(e);
+  return {x:p.x,z:p.z,w:p.w,d:p.d,top:(p.y||0)};
+}
+
+function addWall(w){
+  const h = w.h||1.2;
+  const geo = new THREE.BoxGeometry(w.w, h, w.d);
+  let mesh;
+  if(w.phase){
+    const m = new THREE.MeshPhysicalMaterial(phaseMatBase);
+    mesh = new THREE.Mesh(geo, m);
+  } else {
+    mesh = new THREE.Mesh(geo, wallMat);
+    const eg = new THREE.EdgesGeometry(geo);
+    mesh.add(new THREE.LineSegments(eg, new THREE.LineBasicMaterial({color:0x37e6ff,transparent:true,opacity:.4})));
+  }
+  mesh.position.set(w.x, h/2, w.z);
+  mesh.castShadow = true;
+  world.add(mesh);
+  return {x:w.x,z:w.z,w:w.w,d:w.d,phase:!!w.phase,mesh};
+}
+
+function addGem(gx,gz){
+  const m = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.32),
+    new THREE.MeshStandardMaterial({color:0xffe98a, emissive:0xffaa33, emissiveIntensity:1.2, metalness:.3, roughness:.2})
+  );
+  m.position.set(gx, 0.9, gz);
+  const l = new THREE.PointLight(0xffcc66,0.5,4); m.add(l);
+  world.add(m);
+  return {x:gx,z:gz,mesh:m,got:false,phase:Math.random()*6};
+}
+
+function addGoal(g){
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(g.r, 0.12, 16, 48),
+    new THREE.MeshStandardMaterial({color:0x66ffaa, emissive:0x33ff99, emissiveIntensity:1.4})
+  );
+  ring.rotation.x = Math.PI/2; ring.position.set(g.x, 0.4, g.z);
+  world.add(ring);
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(g.r*0.8, g.r*0.8, 16, 24, 1, true),
+    new THREE.MeshBasicMaterial({color:0x66ffaa, transparent:true, opacity:.12, side:THREE.DoubleSide})
+  );
+  beam.position.set(g.x, 8, g.z); world.add(beam);
+  const gl = new THREE.PointLight(0x66ffaa, 1.2, 14); gl.position.set(g.x,2,g.z); world.add(gl);
+  return {x:g.x,z:g.z,r:g.r,ring,beam};
+}
+
+// ---- Game state ----------------------------------------------------------
+const state = {
+  running:false, stageIdx:0, time:0, shards:0, shardsTotal:0,
+  phaseCharges:0, phaseMax:0, phasing:0, // phasing = seconds remaining intangible
+  best:[null,null,null], won:false,
+};
+try{ const b=JSON.parse(localStorage.getItem('phaseball_best')||'[]'); if(Array.isArray(b)) state.best=b; }catch(e){}
+
+const vel = new THREE.Vector3();
+const pos = new THREE.Vector3();
+const tilt = {x:0,z:0};       // current eased tilt
+const tiltTarget = {x:0,z:0}; // from input
+
+function loadStage(i){
+  clearWorld();
+  trailPts.length = 0;
+  const L = LEVELS[i];
+  stage = {plats:[], walls:[], gems:[], goal:null};
+  L.plats.forEach(p=> stage.plats.push(addPlatform(p)));
+  L.walls.forEach(w=> stage.walls.push(addWall(w)));
+  L.gems.forEach(g=> stage.gems.push(addGem(g.x,g.z)));
+  stage.goal = addGoal(L.goal);
+
+  state.shards = 0; state.shardsTotal = L.gems.length;
+  state.phaseMax = L.phaseCharges; state.phaseCharges = L.phaseCharges;
+  state.phasing = 0; state.time = 0; state.won = false;
+
+  pos.set(L.start.x, TUNE.radius, L.start.z);
+  vel.set(0,0,0); tilt.x=tilt.z=0; tiltTarget.x=tiltTarget.z=0;
+  marble.position.copy(pos);
+
+  document.getElementById('stageNum').textContent = i+1;
+  document.getElementById('shardsTot').textContent = state.shardsTotal;
+  document.getElementById('subtitle').textContent = 'STAGE '+(i+1)+' · '+L.name;
+  updateHud();
+}
+
+function startGame(){
+  state.stageIdx = 0; state.running = true;
+  document.getElementById('center').classList.add('hidden');
+  loadStage(0);
+}
+
+function restartStage(){ if(state.running) loadStage(state.stageIdx); }
+
+function nextStage(){
+  // record best for this stage
+  const b = state.best[state.stageIdx];
+  if(b==null || state.time<b){ state.best[state.stageIdx]=+state.time.toFixed(2);
+    localStorage.setItem('phaseball_best', JSON.stringify(state.best)); }
+  if(state.stageIdx >= LEVELS.length-1){ winGame(); return; }
+  state.stageIdx++;
+  flash('STAGE CLEAR');
+  loadStage(state.stageIdx);
+}
+
+function winGame(){
+  state.running=false; state.won=true;
+  const total = state.best.reduce((a,b)=>a+(b||0),0).toFixed(2);
+  const c = document.getElementById('center'); c.classList.remove('hidden');
+  c.querySelector('h1').textContent='RUN COMPLETE';
+  document.getElementById('subtitle').textContent='ALL 3 STAGES · '+total+'s TOTAL';
+  document.getElementById('centerText').innerHTML='You phased the whole circuit. Best times saved.<br/>Tighten your lines and beat them.';
+  document.getElementById('keysHelp').classList.add('hidden');
+  document.getElementById('startBtn').textContent='Run Again';
+}
+
+function flash(t){
+  const f=document.getElementById('flash'); f.textContent=t; f.style.opacity=1;
+  setTimeout(()=>f.style.opacity=0, 900);
+}
+
+// ---- Input ---------------------------------------------------------------
+const keys = {};
+addEventListener('keydown', e=>{
+  keys[e.code]=true;
+  if(e.code==='Space'){ tryPhase(); e.preventDefault(); }
+  if(e.code==='KeyR') restartStage();
+});
+addEventListener('keyup', e=> keys[e.code]=false);
+
+document.getElementById('startBtn').onclick=()=>{
+  const c=document.getElementById('center');
+  c.querySelector('h1').textContent='PHASEBALL';
+  document.getElementById('keysHelp').classList.remove('hidden');
+  document.getElementById('startBtn').textContent='Start';
+  startGame();
+};
+
+function tryPhase(){
+  if(!state.running) return;
+  if(state.phasing>0) return;
+  if(state.phaseCharges<=0){ flash('NO PHASE'); return; }
+  state.phaseCharges--; state.phasing = TUNE.phaseTime;
+  updateHud();
+}
+
+// touch
+if(matchMedia('(pointer:coarse)').matches){ document.body.classList.add('touch'); }
+(function touchControls(){
+  const stick=document.getElementById('stick'), nub=document.getElementById('nub');
+  let active=false, cx=0, cy=0;
+  function setNub(dx,dy){
+    const max=35, d=Math.hypot(dx,dy), s=d>max?max/d:1;
+    nub.style.left=(35+dx*s)+'px'; nub.style.top=(35+dy*s)+'px';
+    tiltTarget.x = Math.max(-1,Math.min(1,dx/max));
+    tiltTarget.z = Math.max(-1,Math.min(1,dy/max));
+  }
+  stick.addEventListener('pointerdown',e=>{active=true; const r=stick.getBoundingClientRect();
+    cx=r.left+r.width/2; cy=r.top+r.height/2; setNub(e.clientX-cx,e.clientY-cy); stick.setPointerCapture(e.pointerId);});
+  stick.addEventListener('pointermove',e=>{ if(active) setNub(e.clientX-cx,e.clientY-cy); });
+  function end(){ active=false; nub.style.left='35px'; nub.style.top='35px'; tiltTarget.x=0; tiltTarget.z=0; }
+  stick.addEventListener('pointerup',end); stick.addEventListener('pointercancel',end);
+  document.getElementById('phaseBtn').addEventListener('pointerdown',e=>{e.preventDefault();tryPhase();});
+})();
+
+// ---- Physics -------------------------------------------------------------
+function platUnder(px,pz){
+  let best=null;
+  for(const p of stage.plats){
+    if(px>=p.x-p.w/2 && px<=p.x+p.w/2 && pz>=p.z-p.d/2 && pz<=p.z+p.d/2){
+      if(!best || p.top>best.top) best=p;
+    }
+  }
+  return best;
+}
+
+function resolveWalls(){
+  const r=TUNE.radius;
+  for(const w of stage.walls){
+    // Solid walls ALWAYS block. Magenta phase-walls block too — unless you're
+    // currently phasing, which is the whole point of the ability.
+    if(w.phase && state.phasing>0) continue;
+    const hx=w.w/2, hz=w.d/2;
+    const dx = pos.x - w.x, dz = pos.z - w.z;
+    const cx = Math.max(-hx, Math.min(hx, dx));
+    const cz = Math.max(-hz, Math.min(hz, dz));
+    const nx = dx-cx, nz = dz-cz;
+    const dist2 = nx*nx+nz*nz;
+    if(dist2 < r*r){
+      const dist = Math.sqrt(dist2)||0.0001;
+      const push = (r-dist);
+      const ux=nx/dist, uz=nz/dist;
+      pos.x += ux*push; pos.z += uz*push;
+      const vn = vel.x*ux + vel.z*uz;
+      if(vn<0){ vel.x -= (1+TUNE.wallRestitution)*vn*ux; vel.z -= (1+TUNE.wallRestitution)*vn*uz; }
+    }
+  }
+}
+
+let onGround=false;
+function step(dt){
+  // input -> tilt target (keyboard)
+  let ix=0, iz=0;
+  if(keys['KeyD']||keys['ArrowRight']) ix+=1;
+  if(keys['KeyA']||keys['ArrowLeft'])  ix-=1;
+  if(keys['KeyS']||keys['ArrowDown'])  iz+=1;
+  if(keys['KeyW']||keys['ArrowUp'])    iz-=1;
+  if(ix||iz){ tiltTarget.x=ix; tiltTarget.z=iz; }
+  else if(!document.body.classList.contains('touch')){ tiltTarget.x=0; tiltTarget.z=0; }
+
+  // ease tilt
+  const k = 1-Math.exp(-TUNE.tiltLerp*dt);
+  tilt.x += (tiltTarget.x*TUNE.maxTilt - tilt.x)*k;
+  tilt.z += (tiltTarget.z*TUNE.maxTilt - tilt.z)*k;
+
+  // accel from tilt (world lean -> downhill gravity)
+  vel.x += Math.sin(tilt.x)*TUNE.tiltAccel*dt;
+  vel.z += Math.sin(tilt.z)*TUNE.tiltAccel*dt;
+
+  // damping (horizontal)
+  const damp = Math.exp(-TUNE.damping*dt);
+  vel.x*=damp; vel.z*=damp;
+
+  // integrate horizontal
+  pos.x += vel.x*dt; pos.z += vel.z*dt;
+
+  resolveWalls();
+
+  // vertical: support or fall
+  const p = platUnder(pos.x, pos.z);
+  const restY = p ? p.top+TUNE.radius : null;
+  if(restY!==null && pos.y<=restY+0.05 && vel.y<=0.001){
+    pos.y = restY; vel.y=0; onGround=true;
+  } else {
+    vel.y -= TUNE.gravity*dt;
+    pos.y += vel.y*dt;
+    onGround=false;
+    if(restY!==null && pos.y<restY){ pos.y=restY; vel.y=0; onGround=true; }
+  }
+
+  // gems
+  for(const g of stage.gems){
+    if(g.got) continue;
+    if(Math.hypot(pos.x-g.x, pos.z-g.z)<0.7 && Math.abs(pos.y-0.9)<1.2){
+      g.got=true; g.mesh.visible=false; state.shards++; updateHud(); flashSmall();
+    }
+  }
+
+  // goal
+  if(onGround && Math.hypot(pos.x-stage.goal.x, pos.z-stage.goal.z)<stage.goal.r){
+    state.running=false; setTimeout(()=>{ state.running=true; nextStage(); }, 50);
+  }
+
+  // death
+  if(pos.y<TUNE.killY){
+    flash('FELL'); loadStage(state.stageIdx);
+  }
+}
+
+function flashSmall(){ /* subtle: pulse marble glow */ marbleGlow.intensity=2.0; }
+
+// ---- HUD -----------------------------------------------------------------
+function updateHud(){
+  document.getElementById('shards').textContent = state.shards;
+  const b = state.best[state.stageIdx];
+  document.getElementById('best').textContent = b!=null? b.toFixed(2)+'s' : '—';
+  const bars = document.getElementById('phasebars');
+  bars.innerHTML='';
+  for(let i=0;i<state.phaseMax;i++){
+    const d=document.createElement('div'); d.className='pb'+(i<state.phaseCharges?' on':'');
+    bars.appendChild(d);
+  }
+}
+
+// ---- Camera --------------------------------------------------------------
+const camPos = new THREE.Vector3(0,11,12);
+const camLook = new THREE.Vector3();
+function updateCamera(dt){
+  const desired = new THREE.Vector3(pos.x, pos.y+11, pos.z+12);
+  camPos.lerp(desired, 1-Math.exp(-4*dt));
+  camera.position.copy(camPos);
+  camLook.lerp(new THREE.Vector3(pos.x, pos.y, pos.z-2), 1-Math.exp(-6*dt));
+  camera.lookAt(camLook);
+}
+
+// ---- Loop ----------------------------------------------------------------
+let last = performance.now();
+let t = 0;
+function frame(now){
+  requestAnimationFrame(frame);
+  let dt = (now-last)/1000; last=now;
+  if(dt>0.05) dt=0.05; // clamp
+  t += dt;
+
+  if(state.running){
+    // fixed substeps for stable physics
+    let acc = dt; const h=1/120;
+    while(acc>0){ const s=Math.min(h,acc); step(s); acc-=s; }
+    state.time += dt;
+    document.getElementById('timer').textContent = state.time.toFixed(2);
+
+    // phase timer
+    if(state.phasing>0){ state.phasing=Math.max(0,state.phasing-dt); }
+  }
+
+  // marble follow + roll
+  marble.position.copy(pos);
+  const speed = Math.hypot(vel.x,vel.z);
+  if(speed>0.01){
+    const axis = new THREE.Vector3(vel.z,0,-vel.x).normalize();
+    marble.rotateOnWorldAxis(axis, (speed*dt)/TUNE.radius);
+  }
+  marbleGlow.intensity += (0.8-marbleGlow.intensity)*Math.min(1,dt*5);
+
+  // phasing visual on marble
+  const phaseActive = state.phasing>0;
+  marble.material.transmission = phaseActive? 0.2 : 0.9;
+  marble.material.emissive.setHex(phaseActive?0xff4fd8:0x123040);
+  marble.material.emissiveIntensity = phaseActive? 1.0 : 0.4;
+  marble.material.opacity = 1; marble.material.transparent = phaseActive;
+  if(phaseActive) marble.material.opacity = 0.55;
+
+  // phase-wall shimmer + open when phasing nearby
+  if(stage){
+    for(const w of stage.walls){
+      if(!w.phase) continue;
+      const near = Math.hypot(pos.x-w.x,pos.z-w.z)<3;
+      const op = (phaseActive && near)? 0.12 : 0.5+0.15*Math.sin(t*3+w.x);
+      w.mesh.material.opacity = op;
+      w.mesh.material.emissiveIntensity = phaseActive? 1.1 : 0.6;
+    }
+  }
+
+  // gem spin
+  if(stage){ for(const g of stage.gems){ if(!g.got){ g.mesh.rotation.y+=dt*2; g.mesh.position.y=0.9+Math.sin(t*2+g.phase)*0.12; } } }
+  if(stage&&stage.goal){ stage.goal.ring.rotation.z+=dt*1.2; }
+
+  // visual world lean (toward downhill)
+  world.rotation.z = -tilt.x*TUNE.visualLean*5;
+  world.rotation.x =  tilt.z*TUNE.visualLean*5;
+
+  // trail
+  trailPts.unshift(pos.x,pos.y,pos.z);
+  if(trailPts.length>TRAIL_N*3) trailPts.length=TRAIL_N*3;
+  const arr=trailGeo.attributes.position.array;
+  for(let i=0;i<TRAIL_N*3;i++) arr[i]= trailPts[i] ?? (trailPts[trailPts.length-3+(i%3)]||0);
+  trailGeo.attributes.position.needsUpdate=true;
+
+  updateCamera(dt);
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(frame);
+
+addEventListener('resize', ()=>{
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+
+// expose harness for automated preview testing
+window.__game = { state, pos, vel, tilt, tiltTarget, startGame, loadStage, tryPhase, TUNE, LEVELS };
+</script>
+</body>
+</html>
