@@ -6,12 +6,18 @@
 <title>PHASEBALL</title>
 <style>
   :root{
-    --cyan:#37e6ff; --magenta:#ff4fd8; --bg0:#070912; --bg1:#0c1226; --ink:#dbe7ff;
+    --cyan:#37e6ff; --magenta:#ff4fd8; --gold:#ffd24a; --green:#66ffaa;
+    --bg0:#070912; --bg1:#0c1226; --ink:#dbe7ff;
   }
   *{box-sizing:border-box; margin:0; padding:0}
   html,body{height:100%; overflow:hidden; background:var(--bg0); font-family:"Segoe UI",system-ui,sans-serif; color:var(--ink); touch-action:none;}
   #app{position:fixed; inset:0}
   canvas{display:block}
+
+  /* phase flash + vignette */
+  #vignette{position:fixed; inset:0; pointer-events:none; z-index:3; opacity:0;
+    background:radial-gradient(ellipse at center, transparent 45%, rgba(255,79,216,.45) 100%);
+    transition:opacity .15s ease-out}
 
   /* HUD */
   #hud{position:fixed; inset:0; pointer-events:none; z-index:5}
@@ -26,9 +32,15 @@
   .pb{width:26px; height:8px; border-radius:4px; background:rgba(255,79,216,.18);
     border:1px solid rgba(255,79,216,.5)}
   .pb.on{background:var(--magenta); box-shadow:0 0 10px var(--magenta)}
+  #scoreLine{margin-top:4px; font-size:13px}
+  #scoreLine b{color:var(--gold); font-weight:700}
+
+  #mute{position:absolute; top:14px; left:50%; transform:translateX(-50%);
+    pointer-events:auto; cursor:pointer; font-size:18px; width:42px; height:42px;
+    display:flex; align-items:center; justify-content:center; user-select:none}
 
   #center{top:50%; left:50%; transform:translate(-50%,-50%); text-align:center;
-    pointer-events:auto; min-width:280px}
+    pointer-events:auto; min-width:280px; max-width:440px}
   #center h1{font-size:40px; letter-spacing:6px; color:#fff;
     text-shadow:0 0 18px var(--cyan),0 0 40px rgba(55,230,255,.5); margin-bottom:6px}
   #center .sub{color:var(--cyan); letter-spacing:3px; font-size:13px; margin-bottom:16px}
@@ -44,9 +56,46 @@
   .btn:active{transform:translateY(1px)}
   .hidden{display:none !important}
 
-  #flash{position:absolute; top:30%; left:50%; transform:translateX(-50%);
-    font-size:34px; letter-spacing:5px; color:#fff; opacity:0; text-align:center;
-    text-shadow:0 0 20px var(--magenta); transition:opacity .25s}
+  /* arcade flash (big punchy words) */
+  #flash{position:absolute; top:28%; left:50%; transform:translateX(-50%) scale(.6);
+    font-size:46px; font-weight:800; letter-spacing:5px; color:#fff; opacity:0; text-align:center;
+    text-shadow:0 0 22px var(--magenta),0 0 50px rgba(255,79,216,.6); white-space:nowrap}
+  #flash.show{animation:pop .9s ease-out}
+  @keyframes pop{
+    0%{opacity:0; transform:translateX(-50%) scale(.4) rotate(-4deg)}
+    18%{opacity:1; transform:translateX(-50%) scale(1.18) rotate(2deg)}
+    32%{transform:translateX(-50%) scale(1) rotate(0)}
+    78%{opacity:1; transform:translateX(-50%) scale(1)}
+    100%{opacity:0; transform:translateX(-50%) scale(1.05)}
+  }
+
+  /* countdown */
+  #countdown{position:absolute; top:40%; left:50%; transform:translate(-50%,-50%);
+    text-align:center; pointer-events:none; opacity:0}
+  #countdown.show{opacity:1}
+  #cdBig{font-size:72px; font-weight:800; letter-spacing:6px; color:#fff;
+    text-shadow:0 0 26px var(--cyan),0 0 60px rgba(55,230,255,.6)}
+  #cdSub{margin-top:6px; font-size:13px; letter-spacing:3px; color:var(--cyan); opacity:.9}
+  .cdtick{animation:cdtick .7s ease-out}
+  @keyframes cdtick{0%{transform:scale(1.9);opacity:0}25%{opacity:1}100%{transform:scale(1);opacity:1}}
+
+  /* combo popup */
+  #combo{position:absolute; top:46%; left:50%; transform:translateX(-50%);
+    font-size:26px; font-weight:800; letter-spacing:2px; color:var(--gold); opacity:0;
+    text-shadow:0 0 16px var(--gold); pointer-events:none}
+  #combo.show{animation:combopop .7s ease-out}
+  @keyframes combopop{0%{opacity:0;transform:translateX(-50%) translateY(8px) scale(.6)}
+    30%{opacity:1;transform:translateX(-50%) translateY(0) scale(1.15)}
+    100%{opacity:0;transform:translateX(-50%) translateY(-22px) scale(1)}}
+
+  /* dry-and-smug narrator subtitle */
+  #narrator{position:absolute; bottom:7%; left:50%; transform:translateX(-50%);
+    max-width:min(560px,86vw); text-align:center; font-size:16px; line-height:1.5;
+    letter-spacing:.3px; color:#eaf3ff; opacity:0; transition:opacity .35s;
+    text-shadow:0 1px 2px #000,0 0 14px rgba(0,0,0,.6); pointer-events:none}
+  #narrator::before{content:""}
+  #narrator .who{display:block; font-size:10px; letter-spacing:3px; color:var(--cyan);
+    opacity:.7; margin-bottom:3px; text-transform:uppercase}
 
   /* Mobile controls */
   #touch{position:fixed; inset:0; z-index:4; display:none}
@@ -63,30 +112,42 @@
 </head>
 <body>
 <div id="app"></div>
+<div id="vignette"></div>
 
 <div id="hud">
   <div id="topleft" class="panel">
     Stage <b id="stageNum">1</b> / 3<br/>
-    Shards <b id="shards">0</b>/<b id="shardsTot">0</b><br/>
-    Best <b id="best">—</b>
+    Bananas <b id="shards">0</b>/<b id="shardsTot">0</b><br/>
+    Best <b id="best">—</b> <span id="bestMedal"></span>
   </div>
   <div id="topright" class="panel">
     <div id="timer">0.00</div>
     <div style="font-size:11px;opacity:.7;letter-spacing:2px">PHASE</div>
     <div class="phasebars" id="phasebars"></div>
+    <div id="scoreLine">Score <b id="score">0</b></div>
   </div>
 
+  <div id="mute" title="Mute (M)">🔊</div>
+
   <div id="flash"></div>
+  <div id="combo"></div>
+
+  <div id="countdown">
+    <div id="cdBig">3</div>
+    <div id="cdSub"></div>
+  </div>
+
+  <div id="narrator"><span class="who">The Circuit</span><span id="narratorText"></span></div>
 
   <div id="center" class="panel">
     <h1>PHASEBALL</h1>
     <div class="sub" id="subtitle">TILT THE WORLD · PHASE THE WALLS</div>
     <p id="centerText">You don't steer the marble — you <b>tilt the world</b> and let gravity roll it home.<br/>
       Cyan walls block you. <b style="color:var(--magenta)">Magenta phase-walls</b> can be passed through —
-      hit <kbd>Space</kbd> to go intangible for a moment. Charges are limited per stage.</p>
+      hit <kbd>Space</kbd> to go intangible for a moment. Grab <b style="color:var(--gold)">bananas</b>, beat the clock.</p>
     <div class="keys" id="keysHelp">
       <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows — tilt &nbsp;·&nbsp;
-      <kbd>Space</kbd> — phase &nbsp;·&nbsp; <kbd>R</kbd> — restart stage
+      <kbd>Space</kbd> — phase &nbsp;·&nbsp; <kbd>R</kbd> — restart &nbsp;·&nbsp; <kbd>M</kbd> — mute
     </div>
     <button class="btn" id="startBtn">Start</button>
   </div>
@@ -107,6 +168,8 @@ import * as THREE from 'three';
 // PHASEBALL — a tilt-the-world marble game with a phase-through-walls twist.
 // Physics model: the stage stays flat; player input tilts gravity (the classic
 // Monkey Ball equivalence), which we also render as a subtle visual world-lean.
+// The presentation leans Monkey-Ball-arcade (countdown, bounce, bananas, fanfare)
+// while a dry, smug narrator — "the Circuit" — quietly judges your every roll.
 // ---------------------------------------------------------------------------
 
 const TUNE = {
@@ -120,18 +183,19 @@ const TUNE = {
   killY: -14,
   phaseTime: 1.1,      // seconds intangible per charge
   visualLean: 0.10,    // how much of maxTilt the world visibly tilts
+  comboWindow: 2.6,    // seconds to keep a banana combo alive
 };
 
 // ---- Level data ----------------------------------------------------------
 // plat: {x,z,w,d,[y=0]}  wall: {x,z,w,d,[h=1.2],phase?}  gem:{x,z}
-// start:{x,z}  goal:{x,z,r}
+// start:{x,z}  goal:{x,z,r}  medals:{g,s,b}  (target seconds for gold/silver/bronze)
 const LEVELS = [
   // 1: teach rolling + a single full-width phase gate you MUST pass through.
   { name:'WARMUP',
     plats:[ {x:0,z:-8,w:7,d:28} ],                  // x[-3.5,3.5] z[-22,6]
     walls:[ {x:0,z:-8,w:7,d:1,phase:true} ],         // gate spans the whole corridor at z=-8
     gems:[ {x:0,z:1}, {x:1.4,z:-4}, {x:-1.2,z:-12}, {x:0,z:-16} ],
-    start:{x:0,z:3}, goal:{x:0,z:-19,r:1.5}, phaseCharges:1 },
+    start:{x:0,z:3}, goal:{x:0,z:-19,r:1.5}, phaseCharges:1, medals:{g:9,s:13,b:20} },
 
   // 2: phase gate, then a solid wall you must route around to reach the goal.
   { name:'THE DIVIDE',
@@ -140,7 +204,7 @@ const LEVELS = [
     walls:[ {x:0,z:-6,w:7,d:1,phase:true},           // gate
             {x:0,z:-12,w:1,d:10} ],                  // solid divider x[-0.5,0.5] z[-17,-7]
     gems:[ {x:0,z:-2}, {x:3,z:-7}, {x:5,z:-13}, {x:-4,z:-9}, {x:-6,z:-15} ],
-    start:{x:0,z:4}, goal:{x:-6,z:-15,r:1.5}, phaseCharges:1 },
+    start:{x:0,z:4}, goal:{x:-6,z:-15,r:1.5}, phaseCharges:1, medals:{g:13,s:19,b:28} },
 
   // 3: gate, a railed bridge over the void, a cross-leg, then a gate near the goal.
   { name:'CROSSWIRE',
@@ -152,7 +216,7 @@ const LEVELS = [
             {x:-3,z:-9,w:1,d:12}, {x:3,z:-9,w:1,d:12}, // bridge rails (x=±3)
             {x:13,z:0,w:6,d:1,phase:true} ],         // gate 2
     gems:[ {x:0,z:-2},{x:0,z:-10},{x:5,z:-13},{x:10,z:-13},{x:13,z:-8},{x:13,z:1} ],
-    start:{x:0,z:3}, goal:{x:13,z:2.5,r:1.5}, phaseCharges:2 },
+    start:{x:0,z:3}, goal:{x:13,z:2.5,r:1.5}, phaseCharges:2, medals:{g:17,s:25,b:36} },
 ];
 
 // ---- Renderer / scene ----------------------------------------------------
@@ -202,7 +266,16 @@ const marble = new THREE.Mesh(
 );
 marble.castShadow = true;
 const marbleGlow = new THREE.PointLight(0x6fe9ff, 0.8, 8); marble.add(marbleGlow);
-scene.add(marble); // marble lives in scene space (not tilted group) for clean physics
+const marbleSpin = new THREE.Group();   // squash/stretch wrapper so rolling isn't clobbered
+marbleSpin.add(marble);
+scene.add(marbleSpin);
+
+// ghost marble (your best run)
+const ghost = new THREE.Mesh(
+  new THREE.SphereGeometry(TUNE.radius, 24, 24),
+  new THREE.MeshBasicMaterial({color:0xbfefff, transparent:true, opacity:0.18, depthWrite:false})
+);
+ghost.visible = false; scene.add(ghost);
 
 // trail
 const TRAIL_N = 24;
@@ -257,15 +330,19 @@ function addWall(w){
   return {x:w.x,z:w.z,w:w.w,d:w.d,phase:!!w.phase,mesh};
 }
 
+// Banana-shaped collectible (a curved partial torus) — Monkey Ball's signature pickup.
 function addGem(gx,gz){
-  const m = new THREE.Mesh(
-    new THREE.OctahedronGeometry(0.32),
-    new THREE.MeshStandardMaterial({color:0xffe98a, emissive:0xffaa33, emissiveIntensity:1.2, metalness:.3, roughness:.2})
+  const grp = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.TorusGeometry(0.26, 0.085, 10, 22, Math.PI*1.15),
+    new THREE.MeshStandardMaterial({color:0xffe24a, emissive:0xffaa12, emissiveIntensity:1.1, metalness:.2, roughness:.35})
   );
-  m.position.set(gx, 0.9, gz);
-  const l = new THREE.PointLight(0xffcc66,0.5,4); m.add(l);
-  world.add(m);
-  return {x:gx,z:gz,mesh:m,got:false,phase:Math.random()*6};
+  body.rotation.z = Math.PI*0.62;        // tip the arc so it reads as a banana
+  grp.add(body);
+  grp.position.set(gx, 0.9, gz);
+  const l = new THREE.PointLight(0xffcc66,0.5,4); grp.add(l);
+  world.add(grp);
+  return {x:gx,z:gz,mesh:grp,got:false,phase:Math.random()*6};
 }
 
 function addGoal(g){
@@ -284,18 +361,215 @@ function addGoal(g){
   return {x:g.x,z:g.z,r:g.r,ring,beam};
 }
 
+// ---- Particle bursts (confetti / banana sparkle / fall puff) -------------
+const bursts = [];
+function burst(x,y,z,opts){
+  const o = Object.assign({count:22, color:0xffd24a, speed:6, size:0.18, life:0.7, gravity:11, up:0.7}, opts||{});
+  const pos = new Float32Array(o.count*3), vel = [];
+  for(let i=0;i<o.count;i++){
+    pos[i*3]=x; pos[i*3+1]=y; pos[i*3+2]=z;
+    const a=Math.random()*Math.PI*2, r=Math.random()*o.speed;
+    vel.push(new THREE.Vector3(Math.cos(a)*r, (0.3+Math.random())*o.speed*o.up, Math.sin(a)*r));
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  const m = new THREE.PointsMaterial({color:o.color, size:o.size, transparent:true, opacity:1,
+    depthWrite:false, blending:THREE.AdditiveBlending});
+  const pts = new THREE.Points(g,m); scene.add(pts);
+  bursts.push({pts, vel, life:o.life, age:0, gravity:o.gravity});
+}
+function confetti(x,y,z){
+  const cols=[0x37e6ff,0xff4fd8,0xffd24a,0x66ffaa,0xffffff];
+  for(const c of cols) burst(x,y,z,{count:18,color:c,speed:9,size:0.22,life:1.3,gravity:9,up:1.1});
+}
+function updateBursts(dt){
+  for(let i=bursts.length-1;i>=0;i--){
+    const b=bursts[i]; b.age+=dt;
+    const arr=b.pts.geometry.attributes.position.array;
+    for(let j=0;j<b.vel.length;j++){
+      b.vel[j].y -= b.gravity*dt;
+      arr[j*3]+=b.vel[j].x*dt; arr[j*3+1]+=b.vel[j].y*dt; arr[j*3+2]+=b.vel[j].z*dt;
+    }
+    b.pts.geometry.attributes.position.needsUpdate=true;
+    b.pts.material.opacity=Math.max(0,1-b.age/b.life);
+    if(b.age>=b.life){ scene.remove(b.pts); b.pts.geometry.dispose(); b.pts.material.dispose(); bursts.splice(i,1); }
+  }
+}
+
+// ---- Audio (Web Audio synth — no asset files) ----------------------------
+const Audio = (()=>{
+  let ctx=null, master, musicGain, sfxGain, rollGain, rollFilter, rollSrc;
+  let muted = localStorage.getItem('phaseball_muted')==='1';
+  const music = { on:false, next:0, step:0 };
+  const PROG = [ // 4 bars: C  G  Am  F  — bright and bouncy
+    {bass:36, notes:[60,64,67,72]},
+    {bass:31, notes:[59,62,67,71]},
+    {bass:33, notes:[60,64,69,72]},
+    {bass:29, notes:[60,65,69,72]},
+  ];
+  const m2f = m => 440*Math.pow(2,(m-69)/12);
+
+  function init(){
+    if(ctx) return;
+    ctx = new (window.AudioContext||window.webkitAudioContext)();
+    master = ctx.createGain(); master.gain.value = muted?0:0.9; master.connect(ctx.destination);
+    musicGain = ctx.createGain(); musicGain.gain.value = 0.16;
+    const mlp = ctx.createBiquadFilter(); mlp.type='lowpass'; mlp.frequency.value=2400;
+    musicGain.connect(mlp); mlp.connect(master);
+    sfxGain = ctx.createGain(); sfxGain.gain.value = 0.7; sfxGain.connect(master);
+    // rolling rumble: looping noise -> lowpass -> gain (driven by marble speed)
+    const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+    rollSrc = ctx.createBufferSource(); rollSrc.buffer=buf; rollSrc.loop=true;
+    rollFilter = ctx.createBiquadFilter(); rollFilter.type='lowpass'; rollFilter.frequency.value=320;
+    rollGain = ctx.createGain(); rollGain.gain.value=0;
+    rollSrc.connect(rollFilter); rollFilter.connect(rollGain); rollGain.connect(sfxGain);
+    rollSrc.start();
+  }
+  function resume(){ init(); if(ctx.state==='suspended') ctx.resume(); }
+
+  // one synth voice with an attack/decay envelope (+ optional pitch glide)
+  function note(freq, t, dur, type, vol, dest, glideTo){
+    const o=ctx.createOscillator(), g=ctx.createGain();
+    o.type=type||'sine'; o.frequency.setValueAtTime(freq,t);
+    if(glideTo) o.frequency.exponentialRampToValueAtTime(glideTo, t+dur);
+    g.gain.setValueAtTime(0,t);
+    g.gain.linearRampToValueAtTime(vol, t+0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    o.connect(g); g.connect(dest||sfxGain); o.start(t); o.stop(t+dur+0.02);
+  }
+  function chord(freqs, t, dur, type, vol, dest){ for(const f of freqs) note(f,t,dur,type,vol,dest); }
+
+  const api = {
+    resume,
+    get muted(){ return muted; },
+    toggleMute(){
+      muted=!muted; localStorage.setItem('phaseball_muted', muted?'1':'0');
+      if(master) master.gain.setTargetAtTime(muted?0:0.9, ctx.currentTime, 0.05);
+      return muted;
+    },
+    // --- SFX ---
+    go(){ if(!ctx)return; const t=ctx.currentTime; note(m2f(72),t,0.18,'square',0.5); note(m2f(79),t+0.05,0.3,'square',0.5); },
+    tick(n){ if(!ctx)return; note(m2f(67+n*2), ctx.currentTime, 0.12,'square',0.35); },
+    banana(combo){ if(!ctx)return; const t=ctx.currentTime; const base=76+Math.min(combo,8);
+      note(m2f(base),t,0.1,'triangle',0.4); note(m2f(base+5),t+0.05,0.12,'triangle',0.4);
+      note(m2f(base+9),t+0.1,0.16,'square',0.3); },
+    phase(){ if(!ctx)return; const t=ctx.currentTime;
+      note(1200,t,0.4,'sawtooth',0.22,sfxGain,180); note(900,t,0.4,'sine',0.18,sfxGain,140); },
+    deny(){ if(!ctx)return; const t=ctx.currentTime; note(220,t,0.18,'square',0.3,sfxGain,120); },
+    land(v){ if(!ctx)return; const t=ctx.currentTime; note(150,t,0.14,'sine',Math.min(0.5,0.12+v*0.04),sfxGain,70); },
+    bump(){ if(!ctx)return; note(320, ctx.currentTime, 0.06,'sine',0.18,sfxGain,180); },
+    fall(){ if(!ctx)return; const t=ctx.currentTime; note(400,t,0.7,'sawtooth',0.3,sfxGain,60); note(402,t,0.7,'sine',0.2,sfxGain,62); },
+    clear(){ if(!ctx)return; const t=ctx.currentTime; const seq=[60,64,67,72,76];
+      seq.forEach((n,i)=> chord([m2f(n),m2f(n+4)], t+i*0.09, 0.3,'triangle',0.32)); },
+    win(){ if(!ctx)return; const t=ctx.currentTime; const seq=[60,67,72,76,79,84];
+      seq.forEach((n,i)=> note(m2f(n), t+i*0.12, 0.5,'square',0.34));
+      chord([m2f(60),m2f(64),m2f(67),m2f(72)], t+0.72, 1.2,'triangle',0.3); },
+    ui(){ if(!ctx)return; note(m2f(72), ctx.currentTime, 0.12,'square',0.3); },
+    // --- continuous roll, called every frame ---
+    roll(speed){
+      if(!ctx||!rollGain) return;
+      const tgt = Math.min(0.5, speed*0.05);
+      rollGain.gain.setTargetAtTime(tgt, ctx.currentTime, 0.08);
+      rollFilter.frequency.setTargetAtTime(260+speed*120, ctx.currentTime, 0.08);
+    },
+    rollOff(){ if(rollGain) rollGain.gain.setTargetAtTime(0, ctx.currentTime, 0.1); },
+    // --- music loop scheduler (call each frame) ---
+    startMusic(){ if(!ctx)return; music.on=true; music.step=0; music.next=ctx.currentTime+0.1; },
+    stopMusic(){ music.on=false; },
+    pumpMusic(){
+      if(!ctx||!music.on) return;
+      const eighth=0.18;
+      while(music.next < ctx.currentTime + 0.12){
+        const t=music.next, bar=Math.floor(music.step/8)%4, p=PROG[bar], s=music.step%8;
+        if(s%4===0) note(m2f(p.bass), t, 0.34,'triangle',0.5, musicGain);   // bass pulse
+        if(s%2===0) note(m2f(p.bass+12), t, 0.14,'sine',0.18, musicGain);    // off-beat tick
+        const mel = p.notes[s % p.notes.length] + (s>=4?12:0);               // bouncy arpeggio
+        note(m2f(mel), t, 0.16,'square',0.12, musicGain);
+        music.step++; music.next += eighth;
+      }
+    },
+  };
+  return api;
+})();
+
+// ---- Narrator (dry & smug "the Circuit") ---------------------------------
+const QUIPS = {
+  start: ["Oh good, you're back. Let's lower the bar together.",
+          "A new pilot. Statistically, this ends in the void.",
+          "Welcome to the Circuit. Try not to embarrass the physics."],
+  go:    ["Off we roll.", "Try to look like you've done this.", "Gravity's ready. Are you?"],
+  death: ["The void thanks you for your contribution.",
+          "Gravity remains undefeated.",
+          "I've filed that under 'pilot error.'",
+          "Down you go. I'll keep your spot warm.",
+          "That was a decision. A bold, terrible decision.",
+          "Falling: still not a valid route."],
+  noPhase: ["Out of phase, out of luck.",
+            "You spent those rather generously, didn't you.",
+            "No charges left. Improvise. Or don't."],
+  allBananas: ["Every banana. Thorough. Also slow.",
+               "A complete set. Nobody asked, but fine.",
+               "You collected them all. The clock noticed."],
+  fast:  ["Gold. I'll pretend I'm impressed.",
+          "Suspiciously fast. I'm watching you.",
+          "Quick. Almost like you meant to do that."],
+  clear: ["Cleared. Adequate.",
+          "Onward. The next one is worse.",
+          "Acceptable. Barely. Keep moving."],
+  slow:  ["We have all day, apparently.",
+          "Cleared — eventually. Glaciers took notes."],
+  noPhaseClear: ["A clean run, no phasing. Show-off.",
+                 "Zero charges spent. I almost respect that."],
+  win:   ["Run complete. The Circuit is, briefly, satisfied.",
+          "You phased the whole thing. Don't let it go to your head.",
+          "Finished. I'll alert the very small crowd."],
+  idle:  ["Whenever you're ready.",
+          "The ball won't roll itself. Oh, wait — it won't.",
+          "I can wait. I'm code. You, however, are on the clock."],
+};
+const lastQuip = {};
+function quip(kind, hold){
+  const list = QUIPS[kind]; if(!list||!list.length) return;
+  let i, n=0; do{ i=Math.floor(Math.random()*list.length); }while(list.length>1 && i===lastQuip[kind] && ++n<6);
+  lastQuip[kind]=i;
+  say(list[i], hold);
+}
+let narratorTimer=null;
+function say(text, hold){
+  const el=document.getElementById('narrator');
+  document.getElementById('narratorText').textContent=text;
+  el.style.opacity=1;
+  clearTimeout(narratorTimer);
+  narratorTimer=setTimeout(()=> el.style.opacity=0, hold||3600);
+}
+
 // ---- Game state ----------------------------------------------------------
 const state = {
   running:false, stageIdx:0, time:0, shards:0, shardsTotal:0,
   phaseCharges:0, phaseMax:0, phasing:0, // phasing = seconds remaining intangible
   best:[null,null,null], won:false,
+  score:0, combo:0, comboTimer:0, phaseUsed:0,
+  intro:0, went:false, shake:0, squash:0, idle:0, idleFired:false,
 };
 try{ const b=JSON.parse(localStorage.getItem('phaseball_best')||'[]'); if(Array.isArray(b)) state.best=b; }catch(e){}
+
+// ghost recording / playback
+let ghostData=[null,null,null];
+try{ const g=JSON.parse(localStorage.getItem('phaseball_ghost')||'[]'); if(Array.isArray(g)) ghostData=g; }catch(e){}
+let rec=[], recT=0, ghostPlay=null, ghostIdx=0;
 
 const vel = new THREE.Vector3();
 const pos = new THREE.Vector3();
 const tilt = {x:0,z:0};       // current eased tilt
 const tiltTarget = {x:0,z:0}; // from input
+
+function medalFor(i, time){
+  if(time==null) return '';
+  const m=LEVELS[i].medals; if(!m) return '';
+  if(time<=m.g) return '🥇'; if(time<=m.s) return '🥈'; if(time<=m.b) return '🥉'; return '';
+}
 
 function loadStage(i){
   clearWorld();
@@ -310,50 +584,104 @@ function loadStage(i){
   state.shards = 0; state.shardsTotal = L.gems.length;
   state.phaseMax = L.phaseCharges; state.phaseCharges = L.phaseCharges;
   state.phasing = 0; state.time = 0; state.won = false;
+  state.combo = 0; state.comboTimer = 0; state.phaseUsed = 0;
+  state.idle = 0; state.idleFired = false;
 
   pos.set(L.start.x, TUNE.radius, L.start.z);
   vel.set(0,0,0); tilt.x=tilt.z=0; tiltTarget.x=tiltTarget.z=0;
-  marble.position.copy(pos);
+  marbleSpin.position.copy(pos); marble.position.set(0,0,0); marble.rotation.set(0,0,0);
+  marbleSpin.scale.set(1,1,1);
+
+  // ghost setup
+  rec=[]; recT=0;
+  ghostPlay = ghostData[i] && ghostData[i].length ? ghostData[i] : null;
+  ghostIdx = 0; ghost.visible = !!ghostPlay;
 
   document.getElementById('stageNum').textContent = i+1;
   document.getElementById('shardsTot').textContent = state.shardsTotal;
   document.getElementById('subtitle').textContent = 'STAGE '+(i+1)+' · '+L.name;
   updateHud();
+
+  // start the Monkey-Ball countdown; the run begins on "GO!"
+  state.running=false; state.intro=2.0; state.went=false;
+  showCountdown(true);
+  setCountdownTick(2); // "READY?"
 }
 
 function startGame(){
-  state.stageIdx = 0; state.running = true;
+  Audio.resume(); Audio.startMusic();
+  state.stageIdx = 0; state.running = false; state.score = 0;
   document.getElementById('center').classList.add('hidden');
+  document.getElementById('score').textContent = '0';
+  quip('start', 4200);
   loadStage(0);
 }
 
-function restartStage(){ if(state.running) loadStage(state.stageIdx); }
+function restartStage(){ if(state.intro>0 || state.running) loadStage(state.stageIdx); }
 
 function nextStage(){
-  // record best for this stage
-  const b = state.best[state.stageIdx];
-  if(b==null || state.time<b){ state.best[state.stageIdx]=+state.time.toFixed(2);
-    localStorage.setItem('phaseball_best', JSON.stringify(state.best)); }
+  // ---- score this clear ----
+  const i=state.stageIdx, L=LEVELS[i];
+  const timeBonus = Math.max(0, Math.round((L.medals.b - state.time)*10));
+  const medal = medalFor(i, state.time);
+  const medalBonus = medal==='🥇'?500 : medal==='🥈'?300 : medal==='🥉'?150 : 0;
+  const allBananas = state.shards===state.shardsTotal;
+  const noPhase = state.phaseUsed===0;
+  state.score += timeBonus + medalBonus + (allBananas?300:0) + (noPhase?400:0);
+  document.getElementById('score').textContent = state.score;
+
+  // ---- best time + ghost ----
+  const b = state.best[i];
+  if(b==null || state.time<b){
+    state.best[i]=+state.time.toFixed(2);
+    localStorage.setItem('phaseball_best', JSON.stringify(state.best));
+    ghostData[i]=rec; try{ localStorage.setItem('phaseball_ghost', JSON.stringify(ghostData)); }catch(e){}
+  }
+
+  // ---- narrator reaction ----
+  if(allBananas && Math.random()<0.6) quip('allBananas', 3000);
+  else if(noPhase && Math.random()<0.7) quip('noPhaseClear', 3000);
+  else if(medal==='🥇') quip('fast', 3000);
+  else if(state.time>L.medals.b) quip('slow', 3000);
+  else quip('clear', 3000);
+
   if(state.stageIdx >= LEVELS.length-1){ winGame(); return; }
   state.stageIdx++;
-  flash('STAGE CLEAR');
+  flash('STAGE CLEAR'); Audio.clear();
   loadStage(state.stageIdx);
 }
 
 function winGame(){
   state.running=false; state.won=true;
+  Audio.stopMusic(); Audio.rollOff(); Audio.win();
+  showCountdown(false);
+  confetti(pos.x, pos.y+1, pos.z);
   const total = state.best.reduce((a,b)=>a+(b||0),0).toFixed(2);
   const c = document.getElementById('center'); c.classList.remove('hidden');
   c.querySelector('h1').textContent='RUN COMPLETE';
-  document.getElementById('subtitle').textContent='ALL 3 STAGES · '+total+'s TOTAL';
-  document.getElementById('centerText').innerHTML='You phased the whole circuit. Best times saved.<br/>Tighten your lines and beat them.';
+  document.getElementById('subtitle').textContent='ALL 3 STAGES · '+total+'s · '+state.score+' PTS';
+  const medals = state.best.map((t,i)=>medalFor(i,t)).join(' ') || '—';
+  document.getElementById('centerText').innerHTML='You phased the whole circuit. Medals: '+medals+'<br/>Best times saved. Tighten your lines and beat them.';
   document.getElementById('keysHelp').classList.add('hidden');
   document.getElementById('startBtn').textContent='Run Again';
+  quip('win', 5000);
 }
 
+// arcade flash (big punchy word)
 function flash(t){
-  const f=document.getElementById('flash'); f.textContent=t; f.style.opacity=1;
-  setTimeout(()=>f.style.opacity=0, 900);
+  const f=document.getElementById('flash'); f.textContent=t;
+  f.classList.remove('show'); void f.offsetWidth; f.classList.add('show');
+}
+
+// countdown helpers
+function showCountdown(on){ document.getElementById('countdown').classList.toggle('show', on); }
+function setCountdownTick(n){
+  const big=document.getElementById('cdBig'), sub=document.getElementById('cdSub');
+  const L=LEVELS[state.stageIdx];
+  big.textContent = n>0 ? (n===2?'READY?':'SET') : 'GO!';
+  sub.textContent = 'STAGE '+(state.stageIdx+1)+' · '+L.name+'   BEST '+
+    (state.best[state.stageIdx]!=null? state.best[state.stageIdx].toFixed(2)+'s '+medalFor(state.stageIdx,state.best[state.stageIdx]) : '—');
+  big.classList.remove('cdtick'); void big.offsetWidth; big.classList.add('cdtick');
 }
 
 // ---- Input ---------------------------------------------------------------
@@ -362,10 +690,12 @@ addEventListener('keydown', e=>{
   keys[e.code]=true;
   if(e.code==='Space'){ tryPhase(); e.preventDefault(); }
   if(e.code==='KeyR') restartStage();
+  if(e.code==='KeyM') setMute(Audio.toggleMute());
 });
 addEventListener('keyup', e=> keys[e.code]=false);
 
 document.getElementById('startBtn').onclick=()=>{
+  Audio.resume(); Audio.ui();
   const c=document.getElementById('center');
   c.querySelector('h1').textContent='PHASEBALL';
   document.getElementById('keysHelp').classList.remove('hidden');
@@ -373,12 +703,22 @@ document.getElementById('startBtn').onclick=()=>{
   startGame();
 };
 
+function setMute(m){ document.getElementById('mute').textContent = m? '🔇' : '🔊'; }
+setMute(Audio.muted);
+document.getElementById('mute').onclick=()=>{ Audio.resume(); setMute(Audio.toggleMute()); };
+
 function tryPhase(){
   if(!state.running) return;
   if(state.phasing>0) return;
-  if(state.phaseCharges<=0){ flash('NO PHASE'); return; }
-  state.phaseCharges--; state.phasing = TUNE.phaseTime;
+  if(state.phaseCharges<=0){ flash('NO PHASE'); Audio.deny(); quip('noPhase', 2600); return; }
+  state.phaseCharges--; state.phaseUsed++; state.phasing = TUNE.phaseTime;
+  Audio.phase(); pulseVignette();
   updateHud();
+}
+
+function pulseVignette(){
+  const v=document.getElementById('vignette');
+  v.style.opacity=0.85; setTimeout(()=> v.style.opacity=0, 130);
 }
 
 // touch
@@ -411,6 +751,7 @@ function platUnder(px,pz){
   return best;
 }
 
+let lastBump=0;
 function resolveWalls(){
   const r=TUNE.radius;
   for(const w of stage.walls){
@@ -429,7 +770,10 @@ function resolveWalls(){
       const ux=nx/dist, uz=nz/dist;
       pos.x += ux*push; pos.z += uz*push;
       const vn = vel.x*ux + vel.z*uz;
-      if(vn<0){ vel.x -= (1+TUNE.wallRestitution)*vn*ux; vel.z -= (1+TUNE.wallRestitution)*vn*uz; }
+      if(vn<0){
+        vel.x -= (1+TUNE.wallRestitution)*vn*ux; vel.z -= (1+TUNE.wallRestitution)*vn*uz;
+        if(-vn>3 && t-lastBump>0.12){ Audio.bump(); lastBump=t; }
+      }
     }
   }
 }
@@ -464,6 +808,8 @@ function step(dt){
   resolveWalls();
 
   // vertical: support or fall
+  const wasAir = !onGround;
+  const vyBefore = vel.y;
   const p = platUnder(pos.x, pos.z);
   const restY = p ? p.top+TUNE.radius : null;
   if(restY!==null && pos.y<=restY+0.05 && vel.y<=0.001){
@@ -474,33 +820,55 @@ function step(dt){
     onGround=false;
     if(restY!==null && pos.y<restY){ pos.y=restY; vel.y=0; onGround=true; }
   }
+  // landing impact -> squash + thud
+  if(onGround && wasAir && vyBefore < -4){
+    const impact=-vyBefore; state.squash=Math.min(1, impact/14);
+    state.shake=Math.max(state.shake, Math.min(0.4, impact*0.025));
+    Audio.land(impact);
+  }
 
-  // gems
+  // bananas
   for(const g of stage.gems){
     if(g.got) continue;
     if(Math.hypot(pos.x-g.x, pos.z-g.z)<0.7 && Math.abs(pos.y-0.9)<1.2){
-      g.got=true; g.mesh.visible=false; state.shards++; updateHud(); flashSmall();
+      g.got=true; g.mesh.visible=false; state.shards++;
+      state.combo++; state.comboTimer=TUNE.comboWindow;
+      state.score += 100*state.combo;
+      Audio.banana(state.combo);
+      burst(g.x, 0.9, g.z, {count:16,color:0xffd24a,speed:5,size:0.16,life:0.6});
+      if(state.combo>=2) showCombo(state.combo);
+      if(state.shards===state.shardsTotal && Math.random()<0.5) quip('allBananas', 2600);
+      updateHud(); flashSmall();
     }
   }
 
   // goal
   if(onGround && Math.hypot(pos.x-stage.goal.x, pos.z-stage.goal.z)<stage.goal.r){
-    state.running=false; setTimeout(()=>{ state.running=true; nextStage(); }, 50);
+    state.running=false;
+    confetti(stage.goal.x, 1, stage.goal.z); state.shake=Math.max(state.shake,0.3);
+    setTimeout(()=>{ nextStage(); }, 120);
   }
 
   // death
   if(pos.y<TUNE.killY){
-    flash('FELL'); loadStage(state.stageIdx);
+    flash('FELL'); Audio.fall(); quip('death', 2800); state.shake=0;
+    loadStage(state.stageIdx);
   }
 }
 
 function flashSmall(){ /* subtle: pulse marble glow */ marbleGlow.intensity=2.0; }
+function showCombo(n){
+  const c=document.getElementById('combo'); c.textContent=n+'× COMBO';
+  c.classList.remove('show'); void c.offsetWidth; c.classList.add('show');
+}
 
 // ---- HUD -----------------------------------------------------------------
 function updateHud(){
   document.getElementById('shards').textContent = state.shards;
   const b = state.best[state.stageIdx];
   document.getElementById('best').textContent = b!=null? b.toFixed(2)+'s' : '—';
+  document.getElementById('bestMedal').textContent = medalFor(state.stageIdx, b);
+  document.getElementById('score').textContent = state.score;
   const bars = document.getElementById('phasebars');
   bars.innerHTML='';
   for(let i=0;i<state.phaseMax;i++){
@@ -520,6 +888,19 @@ function updateCamera(dt){
   camera.lookAt(camLook);
 }
 
+// ---- Ghost playback ------------------------------------------------------
+function updateGhost(){
+  if(!ghostPlay){ ghost.visible=false; return; }
+  const time=state.time;
+  while(ghostIdx<ghostPlay.length-1 && ghostPlay[ghostIdx+1][0]<time) ghostIdx++;
+  const a=ghostPlay[ghostIdx], b=ghostPlay[Math.min(ghostIdx+1,ghostPlay.length-1)];
+  let gx=a[1], gy=a[2], gz=a[3];
+  if(b!==a){ const span=b[0]-a[0]; const f=span>0? Math.min(1,Math.max(0,(time-a[0])/span)) : 0;
+    gx=a[1]+(b[1]-a[1])*f; gy=a[2]+(b[2]-a[2])*f; gz=a[3]+(b[3]-a[3])*f; }
+  ghost.position.set(gx,gy,gz);
+  ghost.visible = time <= ghostPlay[ghostPlay.length-1][0]+0.5;
+}
+
 // ---- Loop ----------------------------------------------------------------
 let last = performance.now();
 let t = 0;
@@ -528,6 +909,18 @@ function frame(now){
   let dt = (now-last)/1000; last=now;
   if(dt>0.05) dt=0.05; // clamp
   t += dt;
+
+  // countdown ("READY? ... GO!"); the run starts when intro crosses 1.0s
+  if(state.intro>0){
+    const prev=state.intro; state.intro-=dt;
+    const pn=Math.max(0,Math.ceil(prev-1)), nn=Math.max(0,Math.ceil(state.intro-1));
+    if(nn!==pn && state.intro>1){ setCountdownTick(nn); Audio.tick(2-nn); }
+    if(!state.went && state.intro<=1){
+      state.went=true; state.running=true; setCountdownTick(0); Audio.go();
+      if(Math.random()<0.5) quip('go', 2200);
+    }
+    if(state.intro<=0.4){ showCountdown(false); }
+  }
 
   if(state.running){
     // fixed substeps for stable physics
@@ -538,16 +931,37 @@ function frame(now){
 
     // phase timer
     if(state.phasing>0){ state.phasing=Math.max(0,state.phasing-dt); }
+
+    // banana combo decay
+    if(state.comboTimer>0){ state.comboTimer-=dt; if(state.comboTimer<=0) state.combo=0; }
+
+    // record ghost (~20 Hz)
+    recT+=dt;
+    if(recT>=0.05){ recT=0; rec.push([+state.time.toFixed(3), +pos.x.toFixed(3), +pos.y.toFixed(3), +pos.z.toFixed(3)]); }
+
+    // idle nudge from the narrator
+    const sp=Math.hypot(vel.x,vel.z);
+    if(sp<0.12 && !tiltTarget.x && !tiltTarget.z){ state.idle+=dt; } else { state.idle=0; state.idleFired=false; }
+    if(state.idle>6 && !state.idleFired){ state.idleFired=true; quip('idle', 2600); }
   }
 
-  // marble follow + roll
-  marble.position.copy(pos);
+  // rolling sound
   const speed = Math.hypot(vel.x,vel.z);
+  if(state.running) Audio.roll(speed); else Audio.rollOff();
+  Audio.pumpMusic();
+
+  // marble follow + roll
+  marbleSpin.position.copy(pos);
   if(speed>0.01){
     const axis = new THREE.Vector3(vel.z,0,-vel.x).normalize();
     marble.rotateOnWorldAxis(axis, (speed*dt)/TUNE.radius);
   }
   marbleGlow.intensity += (0.8-marbleGlow.intensity)*Math.min(1,dt*5);
+
+  // squash & stretch (decays back to round)
+  state.squash = Math.max(0, state.squash - dt*4);
+  const sq=state.squash;
+  marbleSpin.scale.set(1+sq*0.35, 1-sq*0.45, 1+sq*0.35);
 
   // phasing visual on marble
   const phaseActive = state.phasing>0;
@@ -568,7 +982,7 @@ function frame(now){
     }
   }
 
-  // gem spin
+  // banana spin
   if(stage){ for(const g of stage.gems){ if(!g.got){ g.mesh.rotation.y+=dt*2; g.mesh.position.y=0.9+Math.sin(t*2+g.phase)*0.12; } } }
   if(stage&&stage.goal){ stage.goal.ring.rotation.z+=dt*1.2; }
 
@@ -583,7 +997,18 @@ function frame(now){
   for(let i=0;i<TRAIL_N*3;i++) arr[i]= trailPts[i] ?? (trailPts[trailPts.length-3+(i%3)]||0);
   trailGeo.attributes.position.needsUpdate=true;
 
+  updateBursts(dt);
+  updateGhost();
   updateCamera(dt);
+
+  // screen shake (applied after camera solve)
+  if(state.shake>0){
+    camera.position.x += (Math.random()-.5)*state.shake;
+    camera.position.y += (Math.random()-.5)*state.shake;
+    camera.position.z += (Math.random()-.5)*state.shake;
+    state.shake *= Math.exp(-8*dt); if(state.shake<0.01) state.shake=0;
+  }
+
   renderer.render(scene, camera);
 }
 requestAnimationFrame(frame);
@@ -594,7 +1019,7 @@ addEventListener('resize', ()=>{
 });
 
 // expose harness for automated preview testing
-window.__game = { state, pos, vel, tilt, tiltTarget, startGame, loadStage, tryPhase, TUNE, LEVELS };
+window.__game = { state, pos, vel, tilt, tiltTarget, startGame, loadStage, tryPhase, TUNE, LEVELS, Audio };
 </script>
 </body>
 </html>
