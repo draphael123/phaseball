@@ -100,9 +100,10 @@ gridFloor.rotation.x=-Math.PI/2; gridFloor.position.y=-8; scene.add(gridFloor);
 const world = new CANNON.World({ gravity: new CANNON.Vec3(0,-TUNE.gravity,0) });
 world.broadphase = new CANNON.SAPBroadphase(world);
 world.allowSleep = false;
+world.solver.iterations = 14;          // stiffer contacts = less bounce
 const ballMat = new CANNON.Material('ball');
 const groundMat = new CANNON.Material('ground');
-world.addContactMaterial(new CANNON.ContactMaterial(ballMat, groundMat, { friction:0.4, restitution:0.06 }));
+world.addContactMaterial(new CANNON.ContactMaterial(ballMat, groundMat, { friction:0.45, restitution:0.0 }));
 
 // ---- the tiltable stage (one kinematic body + matching meshes) -----------
 const stageBody = new CANNON.Body({ mass:0, type:CANNON.Body.KINEMATIC, material:groundMat });
@@ -141,18 +142,13 @@ function addGoal(p,r){
 }
 let goalRing=null, goalR=1.6;
 
-// ---- build the course (top surfaces at y=0 unless noted) ------------------
-// main board
-addBox(8,0.5,17, [0,0,0], null, 0x16284a);
-// a couple of bumps to feel contour
-addBox(2,0.5,2, [-3.5,0.5,4], null, 0x1c2f55);
-addBox(2.4,0.6,2.4, [3,0.6,-2], null, 0x1c2f55);
-// a ramp up to a raised goal pad (roll up it with momentum)
-addBox(4,0.35,5, [0,1.0,-11], [-0.32,0,0], 0x223a66);   // tilted ramp
-addBox(5,0.5,4, [0,1.7,-15], null, 0x16284a);            // goal pad (raised)
-addBanana([0,1.2,6]); addBanana([-2,1.2,1]); addBanana([2,1.2,-4]);
-addBanana([0,1.6,-9]); addBanana([0,2.6,-15]);
-addGoal([0,2.2,-15], 1.6);
+// ---- build the course --------------------------------------------------
+// One flat board (open edges = fall off). Kept simple so the *roll* is the
+// only thing to judge; contours/ramps come once the core feel is approved.
+addBox(8,0.5,18, [0,0,0], null, 0x16284a);               // board top at y=0.5
+addBanana([0,1.1,8]); addBanana([-2.5,1.1,3]); addBanana([2.5,1.1,-2]);
+addBanana([0,1.1,-7]); addBanana([-2,1.1,-12]);
+addGoal([0,0.5,-14], 1.6);
 
 // ---- the ball ------------------------------------------------------------
 const ballBody = new CANNON.Body({ mass:1, shape:new CANNON.Sphere(TUNE.ballR), material:ballMat,
@@ -211,15 +207,23 @@ function frame(now){
     if(keys['KeyW']||keys['ArrowUp'])    iz-=1;
     tiltTarget.x=ix; tiltTarget.z=iz;
   }
-  // ease tilt and drive the kinematic stage body
+  // ease tilt toward input
   const k=1-Math.exp(-TUNE.tiltLerp*dt);
   tilt.x+=(tiltTarget.x*TUNE.maxTilt-tilt.x)*k;
   tilt.z+=(tiltTarget.z*TUNE.maxTilt-tilt.z)*k;
-  // roll about Z for left/right (x input), pitch about X for forward/back (z input)
-  stageBody.quaternion.setFromEuler(tilt.z, 0, -tilt.x);
+  // Drive the kinematic stage by ANGULAR VELOCITY (not by teleporting its
+  // orientation) so the solver carries the ball with the surface instead of
+  // ejecting it upward — that ejection was the "jumping instead of rolling".
+  const target=new CANNON.Quaternion(); target.setFromEuler(tilt.z, 0, -tilt.x);
+  const curConj=new CANNON.Quaternion(); stageBody.quaternion.conjugate(curConj);
+  const delta=new CANNON.Quaternion(); target.mult(curConj, delta); delta.normalize();
+  const aa=delta.toAxisAngle(); let axis=aa[0], ang=aa[1];
+  if(ang>Math.PI) ang-=2*Math.PI;
+  const inv=1/Math.max(dt,1e-4);
+  stageBody.angularVelocity.set(axis.x*ang*inv, axis.y*ang*inv, axis.z*ang*inv);
 
   // step physics
-  world.step(1/120, dt, 4);
+  world.step(1/120, dt, 8);
 
   // sync visuals
   stageGroup.quaternion.set(stageBody.quaternion.x, stageBody.quaternion.y, stageBody.quaternion.z, stageBody.quaternion.w);
