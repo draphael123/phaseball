@@ -278,14 +278,18 @@ function addBox(hx,hy,hz,p,eul,color){
 function pad(x,top,z,w,d){ addBox(w/2,0.5,d/2,[x,top-0.5,z],null,0x16284a); }
 function ramp(xc,zA,yA,zB,yB,w){ const run=zA-zB,drop=yA-yB,a=Math.atan2(drop,run),hy=0.4,hz=Math.hypot(run,drop)/2;
   addBox(w/2,hy,hz,[xc,(yA+yB)/2-hy*Math.cos(a),(zA+zB)/2],[-a,0,0],0x1c3358); }
-const gems=[]; let goalLocal=new THREE.Vector3(),goalR=1.6,goalRing=null;
+const gems=[]; let goalLocal=new THREE.Vector3(),goalR=1.6,goalRing=null,goalBanner=null;
+function makeLabel(txt,col){ const c=document.createElement('canvas');c.width=256;c.height=128;const x=c.getContext('2d');
+  x.font='bold 72px "Segoe UI",system-ui,sans-serif';x.textAlign='center';x.textBaseline='middle';x.shadowColor=col;x.shadowBlur=26;x.fillStyle=col;x.fillText(txt,128,64);x.fillText(txt,128,64);
+  const t=new THREE.CanvasTexture(c);t.anisotropy=4;return new THREE.Mesh(new THREE.PlaneGeometry(3,1.5),new THREE.MeshBasicMaterial({map:t,transparent:true,depthWrite:false})); }
 function banana(x,y,z){ const m=new THREE.Mesh(new THREE.TorusGeometry(.26,.085,10,22,Math.PI*1.15),new THREE.MeshStandardMaterial({color:0xffe24a,emissive:0xffaa12,emissiveIntensity:1.1}));
   m.rotation.z=Math.PI*.62;m.position.set(x,y,z);courseGroup.add(m);gems.push({mesh:m,local:new THREE.Vector3(x,y,z),got:false,base:y}); }
 function goal(x,y,z,r){ goalLocal.set(x,y,z);goalR=r||1.6;
   goalRing=new THREE.Mesh(new THREE.TorusGeometry(goalR,.12,16,40),new THREE.MeshStandardMaterial({color:0x66ffaa,emissive:0x33ff99,emissiveIntensity:1.5}));
   goalRing.rotation.x=Math.PI/2;goalRing.position.set(x,y+0.5,z);courseGroup.add(goalRing);
   const beam=new THREE.Mesh(new THREE.CylinderGeometry(goalR*.8,goalR*.8,14,20,1,true),new THREE.MeshBasicMaterial({color:0x66ffaa,transparent:true,opacity:.12,side:THREE.DoubleSide}));
-  beam.position.set(x,y+7,z);courseGroup.add(beam); }
+  beam.position.set(x,y+7,z);courseGroup.add(beam);
+  goalBanner=makeLabel('GOAL','#66ffaa'); goalBanner.position.set(x,y+3.4,z); courseGroup.add(goalBanner); }
 
 // ---- levels --------------------------------------------------------------
 const LEVELS=[
@@ -299,13 +303,29 @@ const LEVELS=[
     pad(0,0,16,8,8); ramp(0,12,0,6,-3,8); pad(0,-3,3,8,8); ramp(0,-1,-3,-7,0,8); pad(0,0,-10,8,8); ramp(0,-14,0,-20,-3,8); pad(0,-3,-24,10,8);
     banana(0,.7,14);banana(0,-2.3,3);banana(0,-1,-3);banana(0,.7,-10);banana(0,-1.3,-17);banana(0,-2.3,-24); goal(0,-3,-24,1.6); } },
   { name:'THE NARROWS', par:38, medals:{g:12,s:18,b:28}, start:{x:0,z:14}, build(){
-    pad(0,0,14,9,10); pad(0,0,-2,3.6,22); pad(0,0,-20,10,12);   // wide → thin bridge → wide (all top 0)
+    pad(0,0,14,9,10); pad(0,0,-2,4.6,22); pad(0,0,-20,10,12);   // wide → thin bridge → wide (all top 0)
     banana(0,.7,12);banana(0,.7,4);banana(0,.7,-2);banana(0,.7,-8);banana(0,.7,-16);banana(0,.7,-22); goal(0,0,-23,1.6); } },
   { name:'SWITCHBACK', par:46, medals:{g:16,s:24,b:34}, start:{x:-6,z:14}, build(){
     pad(-6,0,12,8,10); ramp(-6,8,0,2,-2,8); pad(-6,-2,-4,8,16);          // leg 1 down
     pad(2,-2,-10,18,8);                                                  // cross +x
     ramp(8,-7,-2,-13,0,8); pad(8,0,-18,8,12);                           // up to goal
     banana(-6,.7,10);banana(-6,-1.3,-2);banana(-2,-1.3,-10);banana(4,-1.3,-10);banana(8,-1,-13);banana(8,.7,-18); goal(8,0,-20,1.6); } },
+  { name:'PLUNGE', par:44, medals:{g:14,s:21,b:32}, start:{x:0,z:14}, build(){
+    pad(0,0,16,8,8); ramp(0,12,0,4,-4,8); pad(0,-4,-2,8,12);            // steep drop
+    pad(8,-4,-4,14,8);                                                  // flat turn +x
+    ramp(12,-8,-4,-14,-7,8); pad(12,-7,-18,8,8);                        // drop again to goal
+    banana(0,.7,14);banana(0,-3.3,-2);banana(6,-3.3,-4);banana(12,-3.3,-4);banana(12,-6.3,-12);banana(12,-6.3,-18); goal(12,-7,-18,1.6); } },
+  { name:'THE JUMP', par:40, medals:{g:13,s:20,b:30}, start:{x:0,z:16}, build(){
+    pad(0,0,16,8,10); ramp(0,11,0,1,-3,8); pad(0,-3,-4,8,10);           // run-up
+    ramp(0,-8,-3,-12,-1,8);                                             // launch kicker
+    pad(0,-3,-20,12,10);                                                // landing pad (lower = forgiving)
+    banana(0,.7,14);banana(0,-2.3,-2);banana(0,-1.6,-12);banana(0,-2.3,-19);banana(0,-2.3,-23); goal(0,-3,-22,1.8); } },
+  { name:'GRAND FINALE', par:55, medals:{g:18,s:27,b:40}, start:{x:0,z:15}, build(){
+    pad(0,0,16,8,8); ramp(0,12,0,6,-2,8); pad(0,-2,2,8,8);              // drop
+    pad(7,-2,0,14,7);                                                   // turn +x
+    pad(12,-2,-9.5,4.6,17);                                            // narrow bridge -z
+    pad(12,-2,-22,10,8);                                                // goal pad
+    banana(0,.7,14);banana(0,-1.3,2);banana(6,-1.3,0);banana(12,-1.3,-6);banana(12,-1.3,-14);banana(12,-1.3,-22); goal(12,-2,-22,1.6); } },
 ];
 
 // ---- audio ---------------------------------------------------------------
@@ -419,15 +439,17 @@ function applySettings(){ Audio.setMusicVol(settings.music); Audio.setSfxVol(set
   const tog=(id,on)=>{const b=$(id);b.textContent=on?'On':'Off';b.classList.toggle('off',!on);}; tog('setShake',settings.shake);tog('setScan',settings.retro);tog('setPerf',settings.perf); }
 
 // ---- game state ----------------------------------------------------------
-const state={ running:false, stageIdx:0, time:0, bananas:0, bananaTot:0, intro:0, went:false, won:false, paused:false,
+const state={ running:false, stageIdx:0, time:0, bananas:0, bananaTot:0, intro:0, went:false, won:false, paused:false, attract:true,
   best:LEVELS.map(()=>null), score:0, combo:0, comboTimer:0, shake:0, happy:0, idle:0, idleFired:false, lastTick:99 };
 try{const b=JSON.parse(localStorage.getItem('pb2_best')||'[]');if(Array.isArray(b))state.best=b;}catch(e){} while(state.best.length<LEVELS.length)state.best.push(null);
+let attractAngle=0; const attractCenter=new THREE.Vector3();
 
-function clearCourse(){ while(courseGroup.children.length)courseGroup.remove(courseGroup.children[0]); gems.length=0; goalRing=null; }
+function clearCourse(){ while(courseGroup.children.length)courseGroup.remove(courseGroup.children[0]); gems.length=0; goalRing=null; goalBanner=null; }
 function loadStage(i){
   clearCourse(); applyTheme(i);
   if(stageBody)world.removeBody(stageBody); stageBody=new CANNON.Body({mass:0,type:CANNON.Body.STATIC,material:groundPhys}); world.addBody(stageBody);
   const L=LEVELS[i]; L.build();
+  attractCenter.set((L.start.x+goalLocal.x)/2, 1, (L.start.z+goalLocal.z)/2);
   state.bananas=0; state.bananaTot=gems.length; state.time=0; state.won=false; state.lastTick=99; state.combo=0; state.comboTimer=0; state.idle=0; state.idleFired=false;
   ballBody.position.set(L.start.x,1.2,L.start.z); ballBody.velocity.setZero(); ballBody.angularVelocity.setZero(); ballBody.quaternion.set(0,0,0,1);
   tilt.x=tilt.z=0; tiltTarget.x=tiltTarget.z=0;
@@ -437,7 +459,7 @@ function loadStage(i){
   document.getElementById('subtitle').textContent='STAGE '+(i+1)+' · '+L.name; updateHud();
   state.running=false; state.intro=2.0; state.went=false; showCountdown(true); setCountdown(2);
 }
-function startGame(from){ Audio.resume(); Audio.startMusic(); state.stageIdx=from||0; state.score=0; document.getElementById('score').textContent='0';
+function startGame(from){ Audio.resume(); Audio.startMusic(); state.attract=false; state.stageIdx=from||0; state.score=0; document.getElementById('score').textContent='0';
   document.getElementById('center').classList.add('hidden'); quip('start',4000); loadStage(state.stageIdx); }
 function restartStage(){ if(!state.paused&&(state.intro>0||state.running)) loadStage(state.stageIdx); }
 function nextStage(){
@@ -451,7 +473,7 @@ function nextStage(){
   const rank=(all&&medal==='🥇')?'PERFECT!':(medal==='🥇')?'GREAT!':all?'NICE!':'STAGE CLEAR'; flash(rank);
   if(i>=LEVELS.length-1){ winGame(); return; } state.stageIdx++; loadStage(state.stageIdx);
 }
-function winGame(){ state.running=false; state.won=true; Audio.win(); confetti(0,2,0);
+function winGame(){ state.running=false; state.won=true; state.attract=true; Audio.win(); confetti(0,2,0);
   const c=document.getElementById('center'); c.classList.remove('hidden'); c.querySelector('h1').textContent='RUN COMPLETE';
   document.getElementById('subtitle').textContent='ALL '+LEVELS.length+' STAGES';
   const tot=state.best.reduce((a,b)=>a+(b||0),0).toFixed(2); let rows='';
@@ -510,7 +532,7 @@ if(matchMedia('(pointer:coarse)').matches)document.body.classList.add('touch');
 // ---- loop ----------------------------------------------------------------
 const camPos=new THREE.Vector3(0,7,12);
 const qTilt=new THREE.Quaternion(),_q=new THREE.Quaternion(),_e=new THREE.Euler(),_v=new THREE.Vector3(),_v2=new THREE.Vector3();
-let last=performance.now(),t=0,clear=0;
+let last=performance.now(),t=0,clear=0,prevVy=0;
 function frame(now){ requestAnimationFrame(frame); let dt=(now-last)/1000;last=now;if(dt>0.05)dt=0.05;t+=dt;
 
   if(state.intro>0&&!state.paused){ const prev=state.intro;state.intro-=dt; const nn=Math.max(0,Math.ceil(state.intro-1));
@@ -558,11 +580,21 @@ function frame(now){ requestAnimationFrame(frame); let dt=(now-last)/1000;last=n
   if(clear>0){clear-=dt;if(clear<=0)nextStage();}
   if(goalRing)goalRing.rotation.z+=dt*1.2;
 
+  // hard-landing dust + camera kick
+  { const vy=ballBody.velocity.y; if(state.running&&!state.paused&&prevVy<-7&&vy>-3){
+      _v.copy(ballBody.position).applyQuaternion(qTilt); burst(_v.x,_v.y-0.3,_v.z,{count:10,color:0xbfe9ff,speed:3,size:.12,life:.4,up:.4});
+      state.shake=Math.max(state.shake,Math.min(0.25,(-prevVy)*0.02)); } prevVy=vy; }
   updateBursts(dt);
-  // camera: low chase, world-up, at the ball's rendered (tilted) position
-  _v.copy(ballBody.position).applyQuaternion(qTilt);
-  camPos.lerp(_v2.set(_v.x,_v.y+7,_v.z+12),1-Math.exp(-4*dt)); camera.position.copy(camPos);
-  camera.lookAt(_v.x,_v.y+0.5,_v.z-2);
+  // camera: attract orbit on title/results, else low world-up chase at the rendered ball
+  if(state.attract){ attractAngle+=dt*0.18;
+    camPos.lerp(_v2.set(attractCenter.x+Math.cos(attractAngle)*16,attractCenter.y+9,attractCenter.z+Math.sin(attractAngle)*16),1-Math.exp(-3*dt));
+    camera.position.copy(camPos); camera.lookAt(attractCenter.x,attractCenter.y,attractCenter.z);
+  } else {
+    _v.copy(ballBody.position).applyQuaternion(qTilt);
+    camPos.lerp(_v2.set(_v.x,_v.y+7,_v.z+12),1-Math.exp(-4*dt)); camera.position.copy(camPos);
+    camera.lookAt(_v.x,_v.y+0.5,_v.z-2);
+  }
+  if(goalBanner){ goalBanner.position.y=goalLocal.y+3.4+Math.sin(t*2)*0.15; goalBanner.lookAt(camera.position); }
   if(state.shake>0){ if(settings.shake){camera.position.x+=(Math.random()-.5)*state.shake;camera.position.y+=(Math.random()-.5)*state.shake;camera.position.z+=(Math.random()-.5)*state.shake;} state.shake*=Math.exp(-8*dt); if(state.shake<0.01)state.shake=0; }
   if(dust)dust.rotation.y+=dt*0.015;
   if(composer)composer.render(); else renderer.render(scene,camera);
