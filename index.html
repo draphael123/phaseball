@@ -273,18 +273,23 @@ ghost.visible=false; stageGroup.add(ghost);
 // ---- build helpers -------------------------------------------------------
 const edgeMat=new THREE.LineBasicMaterial({color:0x37e6ff,transparent:true,opacity:.6});
 function addBox(hx,hy,hz,p,eul,color){
-  const shape=new CANNON.Box(new CANNON.Vec3(hx,hy,hz));const q=new CANNON.Quaternion();if(eul)q.setFromEuler(eul[0]||0,eul[1]||0,eul[2]||0);
+  const shape=new CANNON.Box(new CANNON.Vec3(hx,hy,hz));const q=new CANNON.Quaternion(); let mq=null;
+  if(eul instanceof THREE.Quaternion){ q.set(eul.x,eul.y,eul.z,eul.w); mq=eul; }
+  else if(eul){ q.setFromEuler(eul[0]||0,eul[1]||0,eul[2]||0); }
   stageBody.addShape(shape,new CANNON.Vec3(p[0],p[1],p[2]),q);
   const m=new THREE.Mesh(new THREE.BoxGeometry(hx*2,hy*2,hz*2),new THREE.MeshStandardMaterial({color:color||0x16284a,roughness:.75,metalness:.1,emissive:0x0a1426,emissiveIntensity:.4}));
-  m.position.set(p[0],p[1],p[2]);if(eul)m.rotation.set(eul[0]||0,eul[1]||0,eul[2]||0);m.receiveShadow=true;m.castShadow=true;
+  m.position.set(p[0],p[1],p[2]); if(mq)m.quaternion.copy(mq); else if(eul)m.rotation.set(eul[0]||0,eul[1]||0,eul[2]||0); m.receiveShadow=true;m.castShadow=true;
   m.add(new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry),edgeMat));courseGroup.add(m); }
 function pad(x,top,z,w,d){ addBox(w/2,0.5,d/2,[x,top-0.5,z],null,0x16284a); }
 function ramp(xc,zA,yA,zB,yB,w){ const run=zA-zB,drop=yA-yB,a=Math.atan2(drop,run),hy=0.4,hz=Math.hypot(run,drop)/2;
   addBox(w/2,hy,hz,[xc,(yA+yB)/2-hy*Math.cos(a),(zA+zB)/2],[-a,0,0],0x1c3358); }
-// flat curved road: arc of overlapping boxes tangent to the path (a real sweeping turn)
-function curve(cx,cz,radius,a0,a1,width,top,segs){ segs=segs||16;
+// flat or banked curved road: arc of overlapping boxes tangent to the path (a real sweeping turn)
+const _Y=new THREE.Vector3(0,1,0);
+function curve(cx,cz,radius,a0,a1,width,top,segs,bank){ segs=segs||16; bank=bank||0;
   for(let i=0;i<segs;i++){ const a=a0+(a1-a0)*(i+0.5)/segs, x=cx+Math.cos(a)*radius, z=cz+Math.sin(a)*radius, seglen=Math.abs(a1-a0)*radius/segs;
-    addBox(width/2,0.5,seglen*0.8,[x,top-0.5,z],[0,-a,0],0x16284a); } }
+    let o; if(bank){ const T=new THREE.Vector3(-Math.sin(a),0,Math.cos(a));
+      o=new THREE.Quaternion().setFromAxisAngle(T,bank).multiply(new THREE.Quaternion().setFromAxisAngle(_Y,-a)); } else o=[0,-a,0];
+    addBox(width/2,0.5,seglen*0.8,[x,top-0.5,z],o,0x16284a); } }
 const gems=[]; let goalLocal=new THREE.Vector3(),goalR=1.6,goalRing=null,goalBanner=null;
 function makeLabel(txt,col){ const c=document.createElement('canvas');c.width=256;c.height=128;const x=c.getContext('2d');
   x.font='bold 72px "Segoe UI",system-ui,sans-serif';x.textAlign='center';x.textBaseline='middle';x.shadowColor=col;x.shadowBlur=26;x.fillStyle=col;x.fillText(txt,128,64);x.fillText(txt,128,64);
@@ -318,9 +323,13 @@ const LEVELS=[
     ramp(8,-7,-2,-13,0,8); pad(8,0,-18,8,12);                           // up to goal
     banana(-6,.7,10);banana(-6,-1.3,-2);banana(-2,-1.3,-10);banana(4,-1.3,-10);banana(8,-1,-13);banana(8,.7,-18); goal(8,0,-20,1.6); } },
   { name:'THE CURVE', par:34, medals:{g:11,s:17,b:26}, start:{x:0,z:12}, build(){
-    curve(0,0,12,Math.PI/2,0,7,0,18);                                   // a sweeping 90° turn
+    curve(0,0,12,Math.PI/2,0,7,0,18,0.16);                              // a banked sweeping 90° turn
     banana(0,.7,12);banana(3.1,.7,11.6);banana(6,.7,10.4);banana(8.5,.7,8.5);banana(10.4,.7,6);banana(11.6,.7,3.1);
     goal(12,0,0,1.6); } },
+  { name:'HAIRPIN', par:40, medals:{g:13,s:20,b:30}, start:{x:0,z:9}, build(){
+    curve(0,0,9,Math.PI/2,-Math.PI/2,7,0,26,0.22);                      // banked 180° U-turn
+    banana(0,.7,9);banana(6.4,.7,6.4);banana(9,.7,0);banana(6.4,.7,-6.4);banana(0,.7,-9);
+    goal(0,0,-9,1.6); } },
   { name:'PLUNGE', par:44, medals:{g:14,s:21,b:32}, start:{x:0,z:14}, build(){
     pad(0,0,16,8,8); ramp(0,12,0,4,-4,8); pad(0,-4,-2,8,12);            // steep drop
     pad(8,-4,-4,14,8);                                                  // flat turn +x
