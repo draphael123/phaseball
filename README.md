@@ -1,7 +1,8 @@
 # PHASEBALL
 
-A tilt-the-world marble game (Super Monkey Ball-style) with a **phase-through-walls** twist —
-**5 stages**, a live attract-mode title screen, and an end-of-run results board.
+A tilt-the-world marble game (Super Monkey Ball-style) with a **phase-through-walls** twist,
+dressed in a full **Outrun synthwave** look — banded sun on the horizon, chrome marble, neon
+grid, VHS scanlines — across **5 stages**, with a live attract-mode title and a results board.
 You don't steer the marble — you tilt the world and let gravity roll it home. Cyan walls
 block you; **magenta phase-walls** can be passed through by going intangible for a moment,
 but charges are limited per stage.
@@ -26,10 +27,13 @@ soundtrack — all narrated by **the Circuit**, a dry, smug voice that quietly j
   controls so "forward" always means away from the camera. Toggle via `TUNE.camFollow`.
 - **Par timer** — each stage has a `par`; the clock turns red and ticks in the final seconds,
   and running out is a **TIME OVER** fail.
-- **Visuals** — bloom post-processing + ACES tone mapping make the neon glow, environment-map
-  reflections on the glass marble, per-stage gradient skies, a synthwave grid floor for depth,
-  and drifting dust. Post-processing loads from the CDN and gracefully falls back to a plain
-  render if unavailable.
+- **Outrun synthwave look** — a painted poster sky (gradient + banded sun + mountains + stars),
+  a chrome marble with a glowing face, a neon grid floor, magenta/cyan palettes, and hammy
+  arcade callouts ("PERFECT!" / "GREAT!") played against the Circuit's deadpan.
+- **Visuals** — bloom + ACES tone mapping make the neon glow, a core synthwave environment map
+  gives the chrome real reflections, plus VHS scanlines and subtle chromatic aberration.
+  Post-processing loads from the CDN and gracefully falls back to a plain render if unavailable;
+  the chrome reflections work either way.
 - **Attract mode** — the title screen and results board orbit a live stage in the background.
 - **Results board** — finishing shows a per-stage breakdown of best times and medals, plus
   total time and score.

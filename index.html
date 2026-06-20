@@ -44,9 +44,12 @@
 
   #center{top:50%; left:50%; transform:translate(-50%,-50%); text-align:center;
     pointer-events:auto; min-width:280px; max-width:440px}
-  #center h1{font-size:40px; letter-spacing:6px; color:#fff;
-    text-shadow:0 0 18px var(--cyan),0 0 40px rgba(55,230,255,.5); margin-bottom:6px}
-  #center .sub{color:var(--cyan); letter-spacing:3px; font-size:13px; margin-bottom:16px}
+  #center h1{font-size:46px; letter-spacing:8px; font-style:italic; font-weight:800;
+    background:linear-gradient(180deg,#fff 0%,#ffe9a8 38%,#ff5ea8 62%,#b85cff 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    filter:drop-shadow(0 2px 0 #5a1a6e) drop-shadow(0 0 22px rgba(255,79,216,.7));
+    margin-bottom:8px}
+  #center .sub{color:#ff8ad6; letter-spacing:4px; font-size:13px; font-style:italic; margin-bottom:16px}
   #center p, #centerText{font-size:14px; line-height:1.7; opacity:.9; margin-bottom:16px}
   .results{margin:4px 0 16px; text-align:left}
   .rrow{display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:8px;
@@ -63,10 +66,12 @@
   #center .keys kbd{display:inline-block; min-width:20px; padding:2px 7px; margin:0 2px;
     background:rgba(55,230,255,.12); border:1px solid rgba(55,230,255,.4); border-radius:6px;
     font-family:inherit; color:#fff}
-  .btn{pointer-events:auto; cursor:pointer; display:inline-block; padding:12px 30px;
-    font-size:15px; letter-spacing:3px; color:#04121a; font-weight:700;
-    background:linear-gradient(180deg,#6ff0ff,#1fb6d6); border:none; border-radius:30px;
-    box-shadow:0 0 24px rgba(55,230,255,.6); text-transform:uppercase}
+  .btn{pointer-events:auto; cursor:pointer; display:inline-block; padding:13px 34px;
+    font-size:15px; letter-spacing:4px; color:#fff; font-weight:800; font-style:italic;
+    background:linear-gradient(180deg,#ff6ad5,#9a3cff); border:none; border-radius:30px;
+    box-shadow:0 0 26px rgba(255,79,216,.7); text-transform:uppercase;
+    animation:pressblink 1.4s ease-in-out infinite}
+  @keyframes pressblink{0%,100%{box-shadow:0 0 26px rgba(255,79,216,.7)}50%{box-shadow:0 0 40px rgba(55,230,255,.9)}}
   .btn:active{transform:translateY(1px)}
   .hidden{display:none !important}
 
@@ -156,7 +161,7 @@
 
   <div id="center" class="panel">
     <h1>PHASEBALL</h1>
-    <div class="sub" id="subtitle">TILT THE WORLD · PHASE THE WALLS</div>
+    <div class="sub" id="subtitle">NEON CIRCUIT · TILT · PHASE · ROLL</div>
     <div id="centerText">You don't steer the marble — you <b>tilt the world</b> and let gravity roll it home.<br/>
       Cyan walls block you. <b style="color:var(--magenta)">Magenta phase-walls</b> can be passed through —
       hit <kbd>Space</kbd> to go intangible for a moment. Grab <b style="color:var(--gold)">bananas</b>, beat the clock.</div>
@@ -164,7 +169,7 @@
       <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows — tilt &nbsp;·&nbsp;
       <kbd>Space</kbd> — phase &nbsp;·&nbsp; <kbd>R</kbd> — restart &nbsp;·&nbsp; <kbd>M</kbd> — mute
     </div>
-    <button class="btn" id="startBtn">Start</button>
+    <button class="btn" id="startBtn">Press Start</button>
   </div>
 </div>
 
@@ -276,19 +281,22 @@ let composer=null, bloomPass=null;
 (async()=>{
   try{
     const A='three/addons/';
-    const [{EffectComposer},{RenderPass},{UnrealBloomPass},{OutputPass},{RoomEnvironment}] = await Promise.all([
+    const [{EffectComposer},{RenderPass},{UnrealBloomPass},{OutputPass},{FilmPass},{ShaderPass},{RGBShiftShader}] = await Promise.all([
       import(A+'postprocessing/EffectComposer.js'),
       import(A+'postprocessing/RenderPass.js'),
       import(A+'postprocessing/UnrealBloomPass.js'),
       import(A+'postprocessing/OutputPass.js'),
-      import(A+'environments/RoomEnvironment.js'),
+      import(A+'postprocessing/FilmPass.js'),
+      import(A+'postprocessing/ShaderPass.js'),
+      import(A+'shaders/RGBShiftShader.js'),
     ]);
-    const pmrem=new THREE.PMREMGenerator(renderer);
-    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;  // soft reflections
     composer=new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
-    bloomPass=new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight), 0.75, 0.6, 0.85);
+    bloomPass=new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight), 0.9, 0.65, 0.8);
     composer.addPass(bloomPass);
+    const rgb=new ShaderPass(RGBShiftShader); rgb.uniforms.amount.value=0.0014;  // VHS color fringe
+    composer.addPass(rgb);
+    composer.addPass(new FilmPass(0.25));                                        // scanlines + grain
     composer.addPass(new OutputPass());
     composer.setSize(innerWidth, innerHeight);
   }catch(e){ console.warn('PHASEBALL: post-processing unavailable, using basic renderer.', e); composer=null; }
@@ -297,6 +305,20 @@ let composer=null, bloomPass=null;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x070912);
 scene.fog = new THREE.FogExp2(0x070912, 0.018);
+
+// Synthwave environment map (core PMREM, no addons) so the chrome marble always
+// has neon panels to reflect — magenta/cyan/gold instead of a neutral room.
+(function envMap(){
+  const pmrem=new THREE.PMREMGenerator(renderer);
+  const envScene=new THREE.Scene();
+  const panel=(color,x,y,z,s)=>{ const m=new THREE.Mesh(new THREE.BoxGeometry(s,s,s),
+    new THREE.MeshBasicMaterial({color})); m.position.set(x,y,z); envScene.add(m); };
+  envScene.add(new THREE.Mesh(new THREE.SphereGeometry(40,16,16),
+    new THREE.MeshBasicMaterial({color:0x2a0f3a, side:THREE.BackSide})));
+  panel(0xff4fd8,-7,4,-3,7); panel(0x37e6ff,7,3,4,7);
+  panel(0xffe98a,0,-7,0,9); panel(0x9a3cff,0,8,-6,6); panel(0xff6a3c,-6,-2,6,5);
+  scene.environment = pmrem.fromScene(envScene, 0.5).texture;
+})();
 
 const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 400);
 
@@ -321,22 +343,21 @@ const rim = new THREE.PointLight(0xff4fd8, 0.6, 60); rim.position.set(-6,6,4); s
 const world = new THREE.Group();
 scene.add(world);
 
-// ---- Marble --------------------------------------------------------------
+// ---- Marble — a chrome ball (Outrun) -------------------------------------
 const marble = new THREE.Mesh(
   new THREE.SphereGeometry(TUNE.radius, 40, 40),
-  new THREE.MeshPhysicalMaterial({
-    color:0x9fe9ff, metalness:0, roughness:0.05, transmission:0.9, thickness:0.6,
-    clearcoat:1, clearcoatRoughness:0.05, ior:1.4,
-    emissive:0x123040, emissiveIntensity:0.4,
+  new THREE.MeshStandardMaterial({
+    color:0xffffff, metalness:1.0, roughness:0.06,
+    emissive:0x000000, emissiveIntensity:1.0,
   })
 );
 marble.castShadow = true;
-const marbleGlow = new THREE.PointLight(0x6fe9ff, 0.8, 8); marble.add(marbleGlow);
+const marbleGlow = new THREE.PointLight(0xff6fe0, 0.8, 8); marble.add(marbleGlow);
 const marbleSpin = new THREE.Group();   // squash/stretch wrapper so rolling isn't clobbered
 marbleSpin.add(marble);
 scene.add(marbleSpin);
 
-// ---- Face — a little pilot inside the ball (pure Monkey Ball) -------------
+// ---- Face — emissive features on the chrome ball -------------------------
 // Eyes ride the squash wrapper (not the spinning mesh) so they stay upright,
 // facing the camera (+z). They blink, glance toward motion, and go wide on a fall.
 const eyeWhiteMat = new THREE.MeshBasicMaterial({color:0xffffff});
@@ -344,11 +365,11 @@ const pupilMat = new THREE.MeshBasicMaterial({color:0x101418});
 function makeEye(sx){
   const e=new THREE.Group();
   const white=new THREE.Mesh(new THREE.SphereGeometry(0.135,16,16), eyeWhiteMat);
-  white.scale.z=0.45;
+  white.scale.z=0.4;
   const pupil=new THREE.Mesh(new THREE.SphereGeometry(0.072,12,12), pupilMat);
-  pupil.position.set(0,0,0.09);
+  pupil.position.set(0,0,0.08);
   e.add(white); e.add(pupil);
-  e.position.set(sx,0.13,0.42);
+  e.position.set(sx,0.14,0.47);          // sit on the chrome surface
   e.userData.pupil=pupil;
   return e;
 }
@@ -357,9 +378,9 @@ const eyeL=makeEye(-0.17), eyeR=makeEye(0.17);
 const mouthMat = new THREE.MeshBasicMaterial({color:0x101418});
 const mouthSmile = new THREE.Mesh(new THREE.TorusGeometry(0.12,0.028,8,20,Math.PI), mouthMat);
 mouthSmile.rotation.z = Math.PI;                 // opening up -> a smile
-mouthSmile.position.set(0,-0.10,0.43);
+mouthSmile.position.set(0,-0.10,0.48);
 const mouthO = new THREE.Mesh(new THREE.TorusGeometry(0.07,0.03,8,16), mouthMat);
-mouthO.rotation.x = Math.PI/2; mouthO.position.set(0,-0.10,0.43); mouthO.visible=false;
+mouthO.rotation.x = Math.PI/2; mouthO.position.set(0,-0.10,0.48); mouthO.visible=false;
 const face=new THREE.Group(); face.add(eyeL,eyeR,mouthSmile,mouthO);
 marbleSpin.add(face);
 
@@ -374,7 +395,7 @@ ghost.visible = false; scene.add(ghost);
 const TRAIL_N = 24;
 const trailGeo = new THREE.BufferGeometry();
 trailGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_N*3),3));
-const trail = new THREE.Line(trailGeo, new THREE.LineBasicMaterial({color:0x6fe9ff,transparent:true,opacity:.5}));
+const trail = new THREE.Line(trailGeo, new THREE.LineBasicMaterial({color:0xff6fe0,transparent:true,opacity:.6}));
 scene.add(trail);
 const trailPts = [];
 
@@ -470,29 +491,54 @@ function makeLabel(text, color){
   return m;
 }
 
-// ---- Atmosphere: gradient sky, synthwave grid floor, drifting dust --------
-function makeSky(top, bot){
-  const c=document.createElement('canvas'); c.width=8; c.height=256;
+// ---- Atmosphere: OUTRUN synthwave sky, neon grid floor, drifting dust -----
+// The sky is painted as a poster: gradient + banded sun + mountains + stars.
+function makeSynthSky(p){
+  const W=1024, H=576, c=document.createElement('canvas'); c.width=W; c.height=H;
   const x=c.getContext('2d');
-  const g=x.createLinearGradient(0,0,0,256);
-  g.addColorStop(0,top); g.addColorStop(1,bot);
-  x.fillStyle=g; x.fillRect(0,0,8,256);
+  // sky gradient
+  const g=x.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,p.skyTop); g.addColorStop(0.55,p.skyMid); g.addColorStop(1,p.skyBot);
+  x.fillStyle=g; x.fillRect(0,0,W,H);
+  // stars in the upper sky
+  x.fillStyle='rgba(255,255,255,0.9)';
+  for(let i=0;i<90;i++){ const sx=Math.random()*W, sy=Math.random()*H*0.45, r=Math.random()*1.4;
+    x.globalAlpha=0.3+Math.random()*0.6; x.beginPath(); x.arc(sx,sy,r,0,7); x.fill(); }
+  x.globalAlpha=1;
+  // the sun
+  const cx=W*0.5, cy=H*0.46, R=W*0.17;
+  const sg=x.createLinearGradient(cx,cy-R,cx,cy+R);
+  sg.addColorStop(0,p.sun[0]); sg.addColorStop(1,p.sun[1]);
+  x.save(); x.beginPath(); x.arc(cx,cy,R,0,7); x.clip();
+  x.fillStyle=sg; x.fillRect(cx-R,cy-R,R*2,R*2);
+  // venetian bands across the lower half of the sun
+  x.fillStyle=p.skyMid;
+  for(let i=0;i<10;i++){ const by=cy+ (i*i)*1.1; const bh=2+i*1.1; x.fillRect(cx-R,by,R*2,bh); }
+  x.restore();
+  // sun glow
+  const gl=x.createRadialGradient(cx,cy,R*0.6,cx,cy,R*2.2);
+  gl.addColorStop(0,'rgba(255,120,210,0.35)'); gl.addColorStop(1,'rgba(255,120,210,0)');
+  x.fillStyle=gl; x.fillRect(0,0,W,H);
+  // mountain silhouette along the horizon
+  const hz=H*0.62; x.fillStyle=p.mtn; x.beginPath(); x.moveTo(0,hz);
+  let mx=0; while(mx<W){ const peak=hz-(20+Math.random()*70); x.lineTo(mx+30,peak); mx+=60; x.lineTo(mx,hz); }
+  x.lineTo(W,H); x.lineTo(0,H); x.closePath(); x.fill();
   const tex=new THREE.CanvasTexture(c); tex.colorSpace=THREE.SRGBColorSpace;
   return tex;
 }
 const skyCache={};
-function skyFor(i,top,bot){ return skyCache[i] || (skyCache[i]=makeSky(top,bot)); }
+function skyFor(i,p){ return skyCache[i] || (skyCache[i]=makeSynthSky(p)); }
 
 function makeGridTexture(){
   const c=document.createElement('canvas'); c.width=c.height=128;
   const x=c.getContext('2d'); x.clearRect(0,0,128,128);
-  x.strokeStyle='#fff'; x.lineWidth=3; x.strokeRect(0,0,128,128);
+  x.strokeStyle='#fff'; x.lineWidth=4; x.strokeRect(0,0,128,128);
   const tex=new THREE.CanvasTexture(c);
   tex.wrapS=tex.wrapT=THREE.RepeatWrapping; tex.repeat.set(60,60);
   return tex;
 }
 const gridMat=new THREE.MeshBasicMaterial({map:makeGridTexture(), transparent:true,
-  opacity:0.16, color:0x37e6ff, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide});
+  opacity:0.28, color:0xff4fd8, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide});
 const gridFloor=new THREE.Mesh(new THREE.PlaneGeometry(600,600), gridMat);
 gridFloor.rotation.x=-Math.PI/2; gridFloor.position.y=-3.2; scene.add(gridFloor);
 
@@ -501,25 +547,31 @@ let dustPts;
   const n=150, p=new Float32Array(n*3);
   for(let i=0;i<n;i++){ p[i*3]=3+(Math.random()-.5)*120; p[i*3+1]=Math.random()*24-3; p[i*3+2]=-8+(Math.random()-.5)*120; }
   const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(p,3));
-  dustPts=new THREE.Points(g, new THREE.PointsMaterial({color:0x9fd8ff, size:0.12,
+  dustPts=new THREE.Points(g, new THREE.PointsMaterial({color:0xff9fe6, size:0.12,
     transparent:true, opacity:0.5, depthWrite:false, blending:THREE.AdditiveBlending}));
   scene.add(dustPts);
 })();
 
-// ---- Per-stage color themes (warm the world up, give each stage a mood) ---
+// ---- Per-stage synthwave palettes (one identity, three moods) -------------
 const THEMES = [
-  {bgTop:'#06101c', bgBot:'#102538', fog:0x102538, density:0.014, sky:0x3a6f86, accent:0x37e6ff, edge:0x37e6ff}, // teal
-  {bgTop:'#0c0618', bgBot:'#26123c', fog:0x26123c, density:0.015, sky:0x5a3a86, accent:0xb46cff, edge:0x9a6cff}, // violet dusk
-  {bgTop:'#160a06', bgBot:'#301a10', fog:0x301a10, density:0.016, sky:0x86603a, accent:0xff9a3c, edge:0xffae5c}, // sunset
+  // MIAMI — magenta sun over indigo, cyan grid
+  {skyTop:'#1a0838', skyMid:'#5b1a6e', skyBot:'#ff6a8b', sun:['#ffe98a','#ff2e97'], mtn:'#170425',
+   fog:0x3a1140, density:0.013, sky:0x6a2a86, accent:0xff4fd8, edge:0x37e6ff, grid:0x37e6ff},
+  // MIDNIGHT — deep purple, hot-pink sun, magenta grid
+  {skyTop:'#05030f', skyMid:'#2a0f4a', skyBot:'#7a2a8f', sun:['#ffd1f0','#b026ff'], mtn:'#0a0418',
+   fog:0x1c0a36, density:0.014, sky:0x4a2a86, accent:0x9a6cff, edge:0xff4fd8, grid:0xb46cff},
+  // SUNSET STRIP — orange/teal Miami-Vice
+  {skyTop:'#10153a', skyMid:'#7a2a5e', skyBot:'#ff9a3c', sun:['#fff1a8','#ff5a2e'], mtn:'#14082a',
+   fog:0x3a1a30, density:0.014, sky:0x86503a, accent:0xff9a3c, edge:0x37e6ff, grid:0xff4fd8},
 ];
 function applyTheme(i){
   const th=THEMES[i%THEMES.length];
-  scene.background = skyFor(i, th.bgTop, th.bgBot);
+  scene.background = skyFor(i, th);
   scene.fog.color.setHex(th.fog); scene.fog.density=th.density;
   hemi.color.setHex(th.sky);
   rim.color.setHex(th.accent);
   edgeMat.color.setHex(th.edge);
-  gridMat.color.setHex(th.accent);
+  gridMat.color.setHex(th.grid);
 }
 
 // ---- Particle bursts (confetti / banana sparkle / fall puff) -------------
@@ -829,9 +881,13 @@ function nextStage(){
   else if(state.time>L.medals.b) quip('slow', 3000);
   else quip('clear', 3000);
 
+  // hammy arcade callout, played against the Circuit's deadpan
+  const rank = (allBananas&&noPhase)?'PERFECT!' : (medal==='🥇')?'GREAT!' : allBananas?'NICE!' : 'STAGE CLEAR';
+  flash(rank);
+  if(rank==='PERFECT!') Audio.win(); else Audio.clear();
+
   if(state.stageIdx >= LEVELS.length-1){ winGame(); return; }
   state.stageIdx++;
-  flash('STAGE CLEAR'); Audio.clear();
   loadStage(state.stageIdx);
 }
 
@@ -857,7 +913,7 @@ function winGame(){
     '<div class="results">'+rows+
     '<div class="rtotal"><span>TOTAL '+total+'s</span><span>SCORE <b>'+state.score+'</b></span></div></div>';
   document.getElementById('keysHelp').classList.add('hidden');
-  document.getElementById('startBtn').textContent='Run Again';
+  document.getElementById('startBtn').textContent='Play Again';
   quip('win', 5000);
 }
 
@@ -893,7 +949,7 @@ document.getElementById('startBtn').onclick=()=>{
   const c=document.getElementById('center');
   c.querySelector('h1').textContent='PHASEBALL';
   document.getElementById('keysHelp').classList.remove('hidden');
-  document.getElementById('startBtn').textContent='Start';
+  document.getElementById('startBtn').textContent='Press Start';
   startGame();
 };
 
@@ -1221,13 +1277,14 @@ function frame(now){
   const sq=state.squash;
   marbleSpin.scale.set(1+sq*0.35, 1-sq*0.45, 1+sq*0.35);
 
-  // phasing visual on marble
+  // phasing visual on the chrome marble: glow magenta + go translucent
   const phaseActive = state.phasing>0;
-  marble.material.transmission = phaseActive? 0.2 : 0.9;
-  marble.material.emissive.setHex(phaseActive?0xff4fd8:0x123040);
-  marble.material.emissiveIntensity = phaseActive? 1.0 : 0.4;
-  marble.material.opacity = 1; marble.material.transparent = phaseActive;
-  if(phaseActive) marble.material.opacity = 0.55;
+  marble.material.emissive.setHex(phaseActive?0xff4fd8:0x000000);
+  marble.material.emissiveIntensity = phaseActive? 1.2 : 1.0;
+  marble.material.metalness = phaseActive? 0.2 : 1.0;
+  marble.material.roughness = phaseActive? 0.3 : 0.06;
+  marble.material.transparent = phaseActive;
+  marble.material.opacity = phaseActive? 0.5 : 1.0;
 
   // ---- face: expressions (glance, blink, shock, grin, dizzy) ----
   state.happy = Math.max(0, state.happy - dt);
