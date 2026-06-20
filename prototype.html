@@ -106,7 +106,7 @@ const groundMat = new CANNON.Material('ground');
 world.addContactMaterial(new CANNON.ContactMaterial(ballMat, groundMat, { friction:0.45, restitution:0.0 }));
 
 // ---- the tiltable stage (one kinematic body + matching meshes) -----------
-const stageBody = new CANNON.Body({ mass:0, type:CANNON.Body.KINEMATIC, material:groundMat });
+const stageBody = new CANNON.Body({ mass:0, type:CANNON.Body.STATIC, material:groundMat });
 world.addBody(stageBody);
 const stageGroup = new THREE.Group(); scene.add(stageGroup);
 
@@ -158,14 +158,14 @@ const ballMesh = new THREE.Mesh(
   new THREE.SphereGeometry(TUNE.ballR, 32, 32),
   new THREE.MeshStandardMaterial({color:0xffffff, metalness:1, roughness:0.08})
 );
-ballMesh.castShadow=true; scene.add(ballMesh);
+ballMesh.castShadow=true; stageGroup.add(ballMesh);   // rides inside the tilted group
 // a little face so it reads as a character
 const eyeMat=new THREE.MeshBasicMaterial({color:0xffffff}), pupMat=new THREE.MeshBasicMaterial({color:0x101418});
 function eye(sx){ const g=new THREE.Group();
   const w=new THREE.Mesh(new THREE.SphereGeometry(0.13,14,14),eyeMat); w.scale.z=0.4;
   const p=new THREE.Mesh(new THREE.SphereGeometry(0.07,10,10),pupMat); p.position.z=0.08;
   g.add(w,p); g.position.set(sx,0.13,0.46); return g; }
-const face=new THREE.Group(); face.add(eye(-0.17),eye(0.17)); scene.add(face);
+const face=new THREE.Group(); face.add(eye(-0.17),eye(0.17)); stageGroup.add(face);
 
 const START = new CANNON.Vec3(0,1.4,12);
 function reset(){
@@ -192,7 +192,8 @@ function flash(t){ const f=document.getElementById('flash'); f.textContent=t;
 
 // ---- loop ----------------------------------------------------------------
 const camPos=new THREE.Vector3(0,7,12);
-const _q=new THREE.Quaternion(), _v=new THREE.Vector3();
+const qTilt=new THREE.Quaternion(), _q=new THREE.Quaternion(), _e=new THREE.Euler();
+const _v=new THREE.Vector3(), _v2=new THREE.Vector3();
 let last=performance.now(), won=0, t=0;
 function frame(now){
   requestAnimationFrame(frame);
@@ -211,49 +212,42 @@ function frame(now){
   const k=1-Math.exp(-TUNE.tiltLerp*dt);
   tilt.x+=(tiltTarget.x*TUNE.maxTilt-tilt.x)*k;
   tilt.z+=(tiltTarget.z*TUNE.maxTilt-tilt.z)*k;
-  // Drive the kinematic stage by ANGULAR VELOCITY (not by teleporting its
-  // orientation) so the solver carries the ball with the surface instead of
-  // ejecting it upward — that ejection was the "jumping instead of rolling".
-  const target=new CANNON.Quaternion(); target.setFromEuler(tilt.z, 0, -tilt.x);
-  const curConj=new CANNON.Quaternion(); stageBody.quaternion.conjugate(curConj);
-  const delta=new CANNON.Quaternion(); target.mult(curConj, delta); delta.normalize();
-  const aa=delta.toAxisAngle(); let axis=aa[0], ang=aa[1];
-  if(ang>Math.PI) ang-=2*Math.PI;
-  const inv=1/Math.max(dt,1e-4);
-  stageBody.angularVelocity.set(axis.x*ang*inv, axis.y*ang*inv, axis.z*ang*inv);
 
-  // step physics
-  world.step(1/120, dt, 8);
+  // KEY IDEA: the board stays flat & static in physics (zero surface fling).
+  // Instead we rotate GRAVITY by the tilt, then render the whole scene rotated
+  // so you still SEE the stage tilt with a level horizon. Mathematically the
+  // same as a tilting stage, but rock-solid — the ball rolls, never launches.
+  qTilt.setFromEuler(_e.set(tilt.z, 0, -tilt.x, 'XYZ'));
+  _v.set(0, -TUNE.gravity, 0).applyQuaternion(_q.copy(qTilt).invert());  // gravity in flat frame
+  world.gravity.set(_v.x, _v.y, _v.z);
 
-  // sync visuals
-  stageGroup.quaternion.set(stageBody.quaternion.x, stageBody.quaternion.y, stageBody.quaternion.z, stageBody.quaternion.w);
-  ballMesh.position.copy(ballBody.position);
-  ballMesh.quaternion.copy(ballBody.quaternion);
-  // face rides on top of the ball, upright, looking toward travel (no spin)
-  face.position.copy(ballBody.position);
+  // step physics (flat board, dynamic ball)
+  world.step(1/120, dt, 6);
+
+  // render: tilt the whole stage group; ball + face live inside it
+  stageGroup.quaternion.copy(qTilt);
+  ballMesh.position.copy(ballBody.position); ballMesh.quaternion.copy(ballBody.quaternion);
   const sp=Math.hypot(ballBody.velocity.x, ballBody.velocity.z);
+  face.position.copy(ballBody.position);
   if(sp>0.3) face.rotation.y=Math.atan2(ballBody.velocity.x, ballBody.velocity.z);
 
-  // banana pickups (compare in world space)
+  // pickups / goal — distances are rotation-invariant, so compare in flat space
   for(const g of gemMeshes){ if(g.got) continue;
     g.mesh.rotation.y+=dt*2; g.mesh.position.y=g.base+Math.sin(t*2+g.local.x)*0.12;
-    stageGroup.localToWorld(_v.copy(g.local));
-    if(_v.distanceTo(ballMesh.position)<0.8){ g.got=true; g.mesh.visible=false; flash('+1'); }
+    if(g.local.distanceTo(ballBody.position)<0.85){ g.got=true; g.mesh.visible=false; flash('+1'); }
   }
-
-  // goal check (world space) + fall-out
   if(goalRing){
-    stageGroup.localToWorld(_v.copy(goalLocal));
-    if(!won && _v.distanceTo(ballMesh.position) < goalR+0.2){ won=0.9; flash('GOAL!'); }
+    if(!won && goalLocal.distanceTo(ballBody.position) < goalR+0.2){ won=0.9; flash('GOAL!'); }
     goalRing.rotation.z+=dt*1.2;
   }
   if(won>0){ won-=dt; if(won<=0) reset(); }
   if(ballBody.position.y < TUNE.killY){ flash('FELL'); reset(); }
 
-  // low chase camera (world-up; you SEE the stage tilt)
-  const desired=_v.set(ballBody.position.x, ballBody.position.y+7, ballBody.position.z+12);
+  // low chase camera (world-up) aimed at the ball's *rendered* (tilted) position
+  _v.copy(ballBody.position).applyQuaternion(qTilt);
+  const desired=_v2.set(_v.x, _v.y+7, _v.z+12);
   camPos.lerp(desired, 1-Math.exp(-4*dt)); camera.position.copy(camPos);
-  camera.lookAt(ballBody.position.x, ballBody.position.y+0.5, ballBody.position.z-2);
+  camera.lookAt(_v.x, _v.y+0.5, _v.z-2);
 
   // HUD
   document.getElementById('tiltread').textContent=Math.round(Math.hypot(tilt.x,tilt.z)*180/Math.PI)+'°';
