@@ -1,6 +1,7 @@
 # PHASEBALL
 
-A tilt-the-world marble game (Super Monkey Ball-style) with a **phase-through-walls** twist.
+A tilt-the-world marble game (Super Monkey Ball-style) with a **phase-through-walls** twist —
+**5 stages**, a live attract-mode title screen, and an end-of-run results board.
 You don't steer the marble — you tilt the world and let gravity roll it home. Cyan walls
 block you; **magenta phase-walls** can be passed through by going intangible for a moment,
 but charges are limited per stage.
@@ -25,6 +26,9 @@ soundtrack — all narrated by **the Circuit**, a dry, smug voice that quietly j
   controls so "forward" always means away from the camera. Toggle via `TUNE.camFollow`.
 - **Par timer** — each stage has a `par`; the clock turns red and ticks in the final seconds,
   and running out is a **TIME OVER** fail.
+- **Attract mode** — the title screen and results board orbit a live stage in the background.
+- **Results board** — finishing shows a per-stage breakdown of best times and medals, plus
+  total time and score.
 - **Scoring & medals** — bananas pay out by combo; clears award time, medal (🥇/🥈/🥉),
   full-banana, and no-phase bonuses. A faint **ghost** of your best run replays alongside you.
 

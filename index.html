@@ -47,7 +47,18 @@
   #center h1{font-size:40px; letter-spacing:6px; color:#fff;
     text-shadow:0 0 18px var(--cyan),0 0 40px rgba(55,230,255,.5); margin-bottom:6px}
   #center .sub{color:var(--cyan); letter-spacing:3px; font-size:13px; margin-bottom:16px}
-  #center p{font-size:14px; line-height:1.7; opacity:.9; margin-bottom:16px}
+  #center p, #centerText{font-size:14px; line-height:1.7; opacity:.9; margin-bottom:16px}
+  .results{margin:4px 0 16px; text-align:left}
+  .rrow{display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:8px;
+    font-size:14px; line-height:1.4}
+  .rrow:nth-child(odd){background:rgba(55,230,255,.07)}
+  .rrow .rn{width:18px; color:var(--cyan); font-weight:700; text-align:right}
+  .rrow .rname{flex:1; letter-spacing:1px}
+  .rrow .rtime{font-variant-numeric:tabular-nums; opacity:.85}
+  .rrow .rmed{width:22px; text-align:center}
+  .rtotal{display:flex; justify-content:space-between; margin-top:6px; padding:6px 8px;
+    border-top:1px solid rgba(55,230,255,.25); font-size:14px}
+  .rtotal b{color:var(--gold)}
   #center .keys{font-size:12px; opacity:.7; line-height:1.9; margin-bottom:18px}
   #center .keys kbd{display:inline-block; min-width:20px; padding:2px 7px; margin:0 2px;
     background:rgba(55,230,255,.12); border:1px solid rgba(55,230,255,.4); border-radius:6px;
@@ -119,7 +130,7 @@
 
 <div id="hud">
   <div id="topleft" class="panel">
-    Stage <b id="stageNum">1</b> / 3<br/>
+    Stage <b id="stageNum">1</b> / <span id="stageTot">3</span><br/>
     Bananas <b id="shards">0</b>/<b id="shardsTot">0</b><br/>
     Best <b id="best">—</b> <span id="bestMedal"></span>
   </div>
@@ -146,9 +157,9 @@
   <div id="center" class="panel">
     <h1>PHASEBALL</h1>
     <div class="sub" id="subtitle">TILT THE WORLD · PHASE THE WALLS</div>
-    <p id="centerText">You don't steer the marble — you <b>tilt the world</b> and let gravity roll it home.<br/>
+    <div id="centerText">You don't steer the marble — you <b>tilt the world</b> and let gravity roll it home.<br/>
       Cyan walls block you. <b style="color:var(--magenta)">Magenta phase-walls</b> can be passed through —
-      hit <kbd>Space</kbd> to go intangible for a moment. Grab <b style="color:var(--gold)">bananas</b>, beat the clock.</p>
+      hit <kbd>Space</kbd> to go intangible for a moment. Grab <b style="color:var(--gold)">bananas</b>, beat the clock.</div>
     <div class="keys" id="keysHelp">
       <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows — tilt &nbsp;·&nbsp;
       <kbd>Space</kbd> — phase &nbsp;·&nbsp; <kbd>R</kbd> — restart &nbsp;·&nbsp; <kbd>M</kbd> — mute
@@ -223,6 +234,26 @@ const LEVELS = [
             {x:13,z:0,w:6,d:1,phase:true} ],         // gate 2
     gems:[ {x:0,z:-2},{x:0,z:-10},{x:5,z:-13},{x:10,z:-13},{x:13,z:-8},{x:13,z:1} ],
     start:{x:0,z:3}, goal:{x:13,z:2.5,r:1.5}, phaseCharges:2, medals:{g:17,s:25,b:36}, par:70 },
+
+  // 4: phase gate, then a slalom of alternating half-width walls down one corridor.
+  { name:'SLALOM',
+    plats:[ {x:0,z:-10,w:9,d:32} ],                  // x[-4.5,4.5] z[-26,6]
+    walls:[ {x:0,z:-2,w:9,d:1,phase:true},           // gate (full width)
+            {x:-2.25,z:-8,w:4.5,d:1},                // blocks left  -> weave right
+            {x:2.25,z:-14,w:4.5,d:1},                // blocks right -> weave left
+            {x:-2.25,z:-20,w:4.5,d:1} ],             // blocks left  -> weave right
+    gems:[ {x:0,z:1},{x:2.6,z:-8},{x:-2.6,z:-14},{x:2.6,z:-20},{x:0,z:-22} ],
+    start:{x:0,z:4}, goal:{x:0,z:-23,r:1.5}, phaseCharges:1, medals:{g:14,s:20,b:30}, par:50 },
+
+  // 5: a wide arena of pillars behind a gate, with a second gate guarding the goal.
+  { name:'THE GAUNTLET',
+    plats:[ {x:0,z:-10,w:22,d:26} ],                 // x[-11,11] z[-23,3]
+    walls:[ {x:0,z:-3,w:22,d:1,phase:true},          // entry gate (full width)
+            {x:-5,z:-9,w:2,d:6}, {x:4,z:-7,w:6,d:2}, // pillars
+            {x:-2,z:-15,w:8,d:2}, {x:7,z:-13,w:2,d:8},
+            {x:9,z:-16,w:8,d:1,phase:true} ],        // gate guarding the goal
+    gems:[ {x:0,z:-1},{x:-7,z:-6},{x:6,z:-10},{x:-6,z:-18},{x:2,z:-13},{x:9,z:-13} ],
+    start:{x:0,z:1}, goal:{x:9,z:-20,r:1.5}, phaseCharges:2, medals:{g:20,s:30,b:44}, par:75 },
 ];
 
 // ---- Renderer / scene ----------------------------------------------------
@@ -616,19 +647,22 @@ function say(text, hold){
 const state = {
   running:false, stageIdx:0, time:0, shards:0, shardsTotal:0,
   phaseCharges:0, phaseMax:0, phasing:0, // phasing = seconds remaining intangible
-  best:[null,null,null], won:false,
+  best:LEVELS.map(()=>null), won:false,
   score:0, combo:0, comboTimer:0, phaseUsed:0,
   intro:0, went:false, shake:0, squash:0, idle:0, idleFired:false,
-  happy:0, dizzy:0, lastTick:99,
+  happy:0, dizzy:0, lastTick:99, attract:false,
 };
 // camera heading (eased toward direction of travel) + camera-relative input
 let chx=0, chz=-1;                 // smoothed travel heading (starts: away from camera)
 const rawInput = {x:0, z:0};      // pre-transform input (keyboard or touch)
+let attractAngle=0; const attractCenter=new THREE.Vector3(); // title/results orbit
 try{ const b=JSON.parse(localStorage.getItem('phaseball_best')||'[]'); if(Array.isArray(b)) state.best=b; }catch(e){}
+while(state.best.length<LEVELS.length) state.best.push(null);
 
 // ghost recording / playback
-let ghostData=[null,null,null];
+let ghostData=LEVELS.map(()=>null);
 try{ const g=JSON.parse(localStorage.getItem('phaseball_ghost')||'[]'); if(Array.isArray(g)) ghostData=g; }catch(e){}
+while(ghostData.length<LEVELS.length) ghostData.push(null);
 let rec=[], recT=0, ghostPlay=null, ghostIdx=0;
 
 const vel = new THREE.Vector3();
@@ -642,11 +676,13 @@ function medalFor(i, time){
   if(time<=m.g) return '🥇'; if(time<=m.s) return '🥈'; if(time<=m.b) return '🥉'; return '';
 }
 
-function loadStage(i){
+function loadStage(i, attract=false){
   clearWorld();
   applyTheme(i);
   trailPts.length = 0;
   const L = LEVELS[i];
+  state.attract = attract;
+  attractCenter.set((L.start.x+L.goal.x)/2, 0.5, (L.start.z+L.goal.z)/2);
   stage = {plats:[], walls:[], gems:[], goal:null};
   L.plats.forEach(p=> stage.plats.push(addPlatform(p)));
   L.walls.forEach(w=> stage.walls.push(addWall(w)));
@@ -664,9 +700,9 @@ function loadStage(i){
   vel.set(0,0,0); tilt.x=tilt.z=0; tiltTarget.x=tiltTarget.z=0;
   rawInput.x=0; rawInput.z=0;
   chx=0; chz=-1;                                  // reset camera heading (look down -z)
-  camPos.set(L.start.x, TUNE.radius+11, L.start.z+12);  // snap camera behind start
+  camPos.set(L.start.x, TUNE.radius+camHeight, L.start.z+camDist);  // snap camera behind start
   marbleSpin.position.copy(pos); marble.position.set(0,0,0); marble.rotation.set(0,0,0);
-  marbleSpin.scale.set(1,1,1); face.rotation.set(0,0,0);
+  marbleSpin.scale.set(1,1,1); marbleSpin.rotation.set(0,0,0); face.rotation.set(0,0,0);
 
   // ghost setup
   rec=[]; recT=0;
@@ -679,6 +715,9 @@ function loadStage(i){
   document.getElementById('timer').classList.remove('urgent');
   document.getElementById('subtitle').textContent = 'STAGE '+(i+1)+' · '+L.name;
   updateHud();
+
+  // attract mode (title / results) just shows the live scene; no countdown/run
+  if(attract){ state.running=false; state.intro=0; showCountdown(false); return; }
 
   // start the Monkey-Ball countdown; the run begins on "GO!"
   state.running=false; state.intro=2.0; state.went=false;
@@ -731,16 +770,26 @@ function nextStage(){
 }
 
 function winGame(){
-  state.running=false; state.won=true;
+  state.running=false; state.won=true; state.attract=true;  // orbit the final scene
   Audio.stopMusic(); Audio.rollOff(); Audio.win();
   showCountdown(false);
   confetti(pos.x, pos.y+1, pos.z);
   const total = state.best.reduce((a,b)=>a+(b||0),0).toFixed(2);
   const c = document.getElementById('center'); c.classList.remove('hidden');
   c.querySelector('h1').textContent='RUN COMPLETE';
-  document.getElementById('subtitle').textContent='ALL 3 STAGES · '+total+'s · '+state.score+' PTS';
-  const medals = state.best.map((t,i)=>medalFor(i,t)).join(' ') || '—';
-  document.getElementById('centerText').innerHTML='You phased the whole circuit. Medals: '+medals+'<br/>Best times saved. Tighten your lines and beat them.';
+  document.getElementById('subtitle').textContent='ALL '+LEVELS.length+' STAGES CLEARED';
+  // per-stage results breakdown (best time + medal)
+  let rows='';
+  for(let i=0;i<LEVELS.length;i++){
+    const tm=state.best[i];
+    rows+='<div class="rrow"><span class="rn">'+(i+1)+'</span>'+
+      '<span class="rname">'+LEVELS[i].name+'</span>'+
+      '<span class="rtime">'+(tm!=null? tm.toFixed(2)+'s':'—')+'</span>'+
+      '<span class="rmed">'+(medalFor(i,tm)||'·')+'</span></div>';
+  }
+  document.getElementById('centerText').innerHTML =
+    '<div class="results">'+rows+
+    '<div class="rtotal"><span>TOTAL '+total+'s</span><span>SCORE <b>'+state.score+'</b></span></div></div>';
   document.getElementById('keysHelp').classList.add('hidden');
   document.getElementById('startBtn').textContent='Run Again';
   quip('win', 5000);
@@ -979,17 +1028,36 @@ function updateHud(){
 // ---- Camera --------------------------------------------------------------
 const camPos = new THREE.Vector3(0,11,12);
 const camLook = new THREE.Vector3();
+// camera rig — pulled back / gentler swing on touch so small screens read better
+let camDist=12, camHeight=11, camLerp=3.5, camHeadRate=1.8;
+if(matchMedia('(pointer:coarse)').matches){
+  camDist=15; camHeight=13.5; camLerp=3.0; camHeadRate=1.1;
+  camera.fov=62; camera.updateProjectionMatrix();
+}
 function updateCamera(dt){
+  // attract mode: slow cinematic orbit around the stage (title + results)
+  if(state.attract){
+    attractAngle += dt*0.18;
+    const desired = new THREE.Vector3(
+      attractCenter.x + Math.cos(attractAngle)*(camDist+6),
+      attractCenter.y + camHeight+1,
+      attractCenter.z + Math.sin(attractAngle)*(camDist+6));
+    camPos.lerp(desired, 1-Math.exp(-3*dt));
+    camera.position.copy(camPos);
+    camLook.lerp(attractCenter, 1-Math.exp(-3*dt));
+    camera.lookAt(camLook);
+    return;
+  }
   // ease the camera heading toward the direction of travel (when moving)
   const sp=Math.hypot(vel.x,vel.z);
   if(TUNE.camFollow && sp>2.2){
-    const hx=vel.x/sp, hz=vel.z/sp, r=1-Math.exp(-1.8*dt);
+    const hx=vel.x/sp, hz=vel.z/sp, r=1-Math.exp(-camHeadRate*dt);
     chx+=(hx-chx)*r; chz+=(hz-chz)*r;
     const m=Math.hypot(chx,chz)||1; chx/=m; chz/=m;
   }
   // camera sits behind the heading, looks slightly ahead of the marble
-  const desired = new THREE.Vector3(pos.x - chx*12, pos.y+11, pos.z - chz*12);
-  camPos.lerp(desired, 1-Math.exp(-3.5*dt));
+  const desired = new THREE.Vector3(pos.x - chx*camDist, pos.y+camHeight, pos.z - chz*camDist);
+  camPos.lerp(desired, 1-Math.exp(-camLerp*dt));
   camera.position.copy(camPos);
   camLook.lerp(new THREE.Vector3(pos.x + chx*2, pos.y, pos.z + chz*2), 1-Math.exp(-6*dt));
   camera.lookAt(camLook);
@@ -997,7 +1065,7 @@ function updateCamera(dt){
 
 // ---- Ghost playback ------------------------------------------------------
 function updateGhost(){
-  if(!ghostPlay){ ghost.visible=false; return; }
+  if(!ghostPlay || state.attract){ ghost.visible=false; return; }
   const time=state.time;
   while(ghostIdx<ghostPlay.length-1 && ghostPlay[ghostIdx+1][0]<time) ghostIdx++;
   const a=ghostPlay[ghostIdx], b=ghostPlay[Math.min(ghostIdx+1,ghostPlay.length-1)];
@@ -1074,6 +1142,13 @@ function frame(now){
     marble.rotateOnWorldAxis(axis, (speed*dt)/TUNE.radius);
   }
   marbleGlow.intensity += (0.8-marbleGlow.intensity)*Math.min(1,dt*5);
+
+  // attract idle: gentle bob, and keep the face turned toward the orbiting camera
+  if(state.attract){
+    marbleSpin.position.y += Math.sin(t*1.6)*0.18;
+    const dx=camera.position.x-marbleSpin.position.x, dz=camera.position.z-marbleSpin.position.z;
+    marbleSpin.rotation.y = Math.atan2(dx,dz);
+  }
 
   // squash & stretch (decays back to round)
   state.squash = Math.max(0, state.squash - dt*4);
@@ -1163,6 +1238,9 @@ function frame(now){
 
   renderer.render(scene, camera);
 }
+// boot: show the level count and spin up the attract scene behind the title
+document.getElementById('stageTot').textContent = LEVELS.length;
+loadStage(0, true);
 requestAnimationFrame(frame);
 
 addEventListener('resize', ()=>{
