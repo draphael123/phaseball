@@ -1465,23 +1465,24 @@ function updateEnergyBar(){
 }
 
 // ---- Camera --------------------------------------------------------------
-const camPos = new THREE.Vector3(0,11,12);
+const camPos = new THREE.Vector3(0,5,9);
 const camLook = new THREE.Vector3();
-// camera rig — pulled back / gentler swing on touch so small screens read better
-let camDist=12, camHeight=11, camLerp=3.5, camHeadRate=1.8;
+// low Super-Monkey-Ball chase cam: close + behind + shallow, looking toward the horizon
+let camDist=9, camHeight=4.6, camLerp=4, camHeadRate=2.2, lookAhead=4.5, lookUp=1.7;
+camera.fov=60;
 if(matchMedia('(pointer:coarse)').matches){
-  camDist=15; camHeight=13.5; camLerp=3.0; camHeadRate=1.1;
-  camera.fov=62; camera.updateProjectionMatrix();
+  camDist=11; camHeight=6; camLerp=3.4; camHeadRate=1.4; lookAhead=5; lookUp=1.8; camera.fov=66;
 }
+camera.updateProjectionMatrix();
 const baseFov = camera.fov;   // dash punches FOV out from here, then eases back
 function updateCamera(dt){
   // attract mode: slow cinematic orbit around the stage (title + results)
   if(state.attract){
     attractAngle += dt*0.18;
     const desired = new THREE.Vector3(
-      attractCenter.x + Math.cos(attractAngle)*(camDist+6),
-      attractCenter.y + camHeight+1,
-      attractCenter.z + Math.sin(attractAngle)*(camDist+6));
+      attractCenter.x + Math.cos(attractAngle)*16,
+      attractCenter.y + 9,
+      attractCenter.z + Math.sin(attractAngle)*16);
     camPos.lerp(desired, 1-Math.exp(-3*dt));
     camera.position.copy(camPos);
     camLook.lerp(attractCenter, 1-Math.exp(-3*dt));
@@ -1495,11 +1496,11 @@ function updateCamera(dt){
     chx+=(hx-chx)*r; chz+=(hz-chz)*r;
     const m=Math.hypot(chx,chz)||1; chx/=m; chz/=m;
   }
-  // camera sits behind the heading, looks slightly ahead of the marble
+  // camera sits low behind the heading; aim ahead + up so the horizon shows
   const desired = new THREE.Vector3(pos.x - chx*camDist, pos.y+camHeight, pos.z - chz*camDist);
   camPos.lerp(desired, 1-Math.exp(-camLerp*dt));
   camera.position.copy(camPos);
-  camLook.lerp(new THREE.Vector3(pos.x + chx*2, pos.y, pos.z + chz*2), 1-Math.exp(-6*dt));
+  camLook.lerp(new THREE.Vector3(pos.x + chx*lookAhead, pos.y+lookUp, pos.z + chz*lookAhead), 1-Math.exp(-6*dt));
   camera.lookAt(camLook);
 }
 
