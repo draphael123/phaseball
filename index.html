@@ -217,55 +217,52 @@ const TUNE = {
 
 // ---- Level data ----------------------------------------------------------
 // plat: {x,z,w,d,[y=0]}  wall: {x,z,w,d,[h=1.2],breakable?}  gem:{x,z}
-// start:{x,z}  goal:{x,z,r}  medals:{g,s,b}  par:sec   (breakable walls need a turbo dash)
+// start:{x,z}  goal:{x,z,r}  medals:{g,s,b}  par:sec  dashPar:int
+// Breakable barriers shatter only mid-dash; gaps between platforms must be
+// cleared with a dash. dashPar = dashes expected for a clean run (efficiency bonus).
 const LEVELS = [
-  // 1: teach rolling + a single full-width barrier you MUST dash through.
-  { name:'WARMUP',
-    plats:[ {x:0,z:-8,w:7,d:28} ],                  // x[-3.5,3.5] z[-22,6]
-    walls:[ {x:0,z:-8,w:7,d:1,breakable:true} ],         // gate spans the whole corridor at z=-8
+  // 1: IGNITION — teach the dash by smashing one full-width barrier (flat, safe).
+  { name:'IGNITION',
+    plats:[ {x:0,z:-8,w:7,d:28} ],                       // x[-3.5,3.5] z[-22,6]
+    walls:[ {x:0,z:-8,w:7,d:1,breakable:true} ],         // barrier across the corridor
     gems:[ {x:0,z:1}, {x:1.4,z:-4}, {x:-1.2,z:-12}, {x:0,z:-16} ],
-    start:{x:0,z:3}, goal:{x:0,z:-19,r:1.5}, medals:{g:9,s:13,b:20}, par:40 },
+    start:{x:0,z:3}, goal:{x:0,z:-19,r:1.5}, medals:{g:9,s:13,b:20}, par:40, dashPar:1 },
 
-  // 2: phase gate, then a solid wall you must route around to reach the goal.
-  { name:'THE DIVIDE',
-    plats:[ {x:0,z:0,w:7,d:10},                      // entry x[-3.5,3.5] z[-5,5]
-            {x:0,z:-11,w:16,d:16} ],                 // field x[-8,8] z[-19,-3]
-    walls:[ {x:0,z:-6,w:7,d:1,breakable:true},           // gate
-            {x:0,z:-12,w:1,d:10} ],                  // solid divider x[-0.5,0.5] z[-17,-7]
-    gems:[ {x:0,z:-2}, {x:3,z:-7}, {x:5,z:-13}, {x:-4,z:-9}, {x:-6,z:-15} ],
-    start:{x:0,z:4}, goal:{x:-6,z:-15,r:1.5}, medals:{g:13,s:19,b:28}, par:55 },
+  // 2: THE LEAP — teach dashing across a gap of open void.
+  { name:'THE LEAP',
+    plats:[ {x:0,z:2,w:8,d:12},                          // launch  x[-4,4]  z[-4,8]
+            {x:0,z:-22,w:10,d:16} ],                     // landing x[-5,5]  z[-30,-14]
+    walls:[],                                            // (gap z[-4,-14] ≈10u — dash to clear)
+    gems:[ {x:0,z:4}, {x:0,z:-1}, {x:0,z:-17}, {x:2.5,z:-22}, {x:0,z:-26} ],
+    start:{x:0,z:6}, goal:{x:0,z:-26,r:1.5}, medals:{g:9,s:14,b:21}, par:38, dashPar:1 },
 
-  // 3: gate, a railed bridge over the void, a cross-leg, then a gate near the goal.
-  { name:'CROSSWIRE',
-    plats:[ {x:0,z:0,w:6,d:8},                       // entry z[-4,4]
-            {x:0,z:-9,w:5,d:12},                     // bridge x[-2.5,2.5] z[-15,-3]
-            {x:8,z:-13,w:16,d:6},                    // cross x[0,16] z[-16,-10]
-            {x:13,z:-5,w:6,d:18} ],                  // up-leg x[10,16] z[-14,4]
-    walls:[ {x:0,z:-6,w:6,d:1,breakable:true},           // gate 1
-            {x:-3,z:-9,w:1,d:12}, {x:3,z:-9,w:1,d:12}, // bridge rails (x=±3)
-            {x:13,z:0,w:6,d:1,breakable:true} ],         // gate 2
-    gems:[ {x:0,z:-2},{x:0,z:-10},{x:5,z:-13},{x:10,z:-13},{x:13,z:-8},{x:13,z:1} ],
-    start:{x:0,z:3}, goal:{x:13,z:2.5,r:1.5}, medals:{g:17,s:25,b:36}, par:70 },
+  // 3: AFTERBURN — a chain of barriers; manage the meter to smash all three.
+  { name:'AFTERBURN',
+    plats:[ {x:0,z:-12,w:8,d:34} ],                      // x[-4,4] z[-29,5]
+    walls:[ {x:0,z:-3,w:8,d:1,breakable:true},
+            {x:0,z:-11,w:8,d:1,breakable:true},
+            {x:0,z:-19,w:8,d:1,breakable:true} ],
+    gems:[ {x:0,z:1}, {x:0,z:-7}, {x:0,z:-15}, {x:0,z:-23} ],
+    start:{x:0,z:3}, goal:{x:0,z:-26,r:1.5}, medals:{g:11,s:16,b:24}, par:42, dashPar:3 },
 
-  // 4: phase gate, then a slalom of alternating half-width walls down one corridor.
-  { name:'SLALOM',
-    plats:[ {x:0,z:-10,w:9,d:32} ],                  // x[-4.5,4.5] z[-26,6]
-    walls:[ {x:0,z:-2,w:9,d:1,breakable:true},           // gate (full width)
-            {x:-2.25,z:-8,w:4.5,d:1},                // blocks left  -> weave right
-            {x:2.25,z:-14,w:4.5,d:1},                // blocks right -> weave left
-            {x:-2.25,z:-20,w:4.5,d:1} ],             // blocks left  -> weave right
-    gems:[ {x:0,z:1},{x:2.6,z:-8},{x:-2.6,z:-14},{x:2.6,z:-20},{x:0,z:-22} ],
-    start:{x:0,z:4}, goal:{x:0,z:-23,r:1.5}, medals:{g:14,s:20,b:30}, par:50 },
+  // 4: OVERPASS — smash a barrier and clear the gap behind it in one boost.
+  { name:'OVERPASS',
+    plats:[ {x:0,z:2,w:8,d:12},                          // launch x[-4,4] z[-4,8]
+            {x:0,z:-20,w:12,d:16} ],                     // field  x[-6,6] z[-28,-12]
+    walls:[ {x:0,z:-1,w:8,d:1,breakable:true},           // barrier at the lip of the launch pad
+            {x:0,z:-16,w:12,d:1,breakable:true} ],       // barrier guarding the goal
+    gems:[ {x:0,z:5}, {x:0,z:-14}, {x:3,z:-20}, {x:-3,z:-19}, {x:0,z:-24} ],
+    start:{x:0,z:6}, goal:{x:0,z:-24,r:1.5}, medals:{g:13,s:19,b:28}, par:45, dashPar:3 },
 
-  // 5: a wide arena of pillars behind a gate, with a second gate guarding the goal.
-  { name:'THE GAUNTLET',
-    plats:[ {x:0,z:-10,w:22,d:26} ],                 // x[-11,11] z[-23,3]
-    walls:[ {x:0,z:-3,w:22,d:1,breakable:true},          // entry gate (full width)
-            {x:-5,z:-9,w:2,d:6}, {x:4,z:-7,w:6,d:2}, // pillars
-            {x:-2,z:-15,w:8,d:2}, {x:7,z:-13,w:2,d:8},
-            {x:9,z:-16,w:8,d:1,breakable:true} ],        // gate guarding the goal
-    gems:[ {x:0,z:-1},{x:-7,z:-6},{x:6,z:-10},{x:-6,z:-18},{x:2,z:-13},{x:9,z:-13} ],
-    start:{x:0,z:1}, goal:{x:9,z:-20,r:1.5}, medals:{g:20,s:30,b:44}, par:75 },
+  // 5: NEON MILE — the climax: barrier → leap → barrier chain → goal.
+  { name:'NEON MILE',
+    plats:[ {x:0,z:3,w:7,d:10},                          // launch x[-3.5,3.5] z[-2,8]
+            {x:0,z:-22,w:9,d:24} ],                      // long run x[-4.5,4.5] z[-34,-10]
+    walls:[ {x:0,z:0,w:7,d:1,breakable:true},            // barrier at the lip
+            {x:0,z:-16,w:9,d:1,breakable:true},          // chain on the long run
+            {x:0,z:-24,w:9,d:1,breakable:true} ],        // (gap z[-2,-10] ≈8u after the first)
+    gems:[ {x:0,z:5}, {x:0,z:-13}, {x:-2,z:-16}, {x:0,z:-20}, {x:2,z:-27}, {x:0,z:-31} ],
+    start:{x:0,z:6}, goal:{x:0,z:-31,r:1.5}, medals:{g:17,s:25,b:36}, par:55, dashPar:4 },
 ];
 
 // ---- Renderer / scene ----------------------------------------------------
@@ -897,8 +894,8 @@ function nextStage(){
   const medal = medalFor(i, state.time);
   const medalBonus = medal==='🥇'?500 : medal==='🥈'?300 : medal==='🥉'?150 : 0;
   const allBananas = state.shards===state.shardsTotal;
-  const gates = L.walls.filter(w=>w.breakable).length;
-  const efficient = state.dashUsed<=gates;   // no wasted boosts
+  const dashPar = L.dashPar ?? L.walls.filter(w=>w.breakable).length;
+  const efficient = state.dashUsed<=dashPar;   // no wasted boosts
   state.score += timeBonus + medalBonus + (allBananas?300:0) + (efficient?400:0);
   document.getElementById('score').textContent = state.score;
 
