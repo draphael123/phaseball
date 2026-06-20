@@ -235,7 +235,7 @@ scene.fog = new THREE.FogExp2(0x070912, 0.018);
 const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 0.1, 400);
 
 // lights
-scene.add(new THREE.HemisphereLight(0x335577, 0x05070f, 0.7));
+const hemi = new THREE.HemisphereLight(0x335577, 0x05070f, 0.85); scene.add(hemi);
 const key = new THREE.DirectionalLight(0xbfe9ff, 1.1);
 key.position.set(8, 18, 8); key.castShadow = true;
 key.shadow.mapSize.set(2048,2048);
@@ -269,6 +269,26 @@ const marbleGlow = new THREE.PointLight(0x6fe9ff, 0.8, 8); marble.add(marbleGlow
 const marbleSpin = new THREE.Group();   // squash/stretch wrapper so rolling isn't clobbered
 marbleSpin.add(marble);
 scene.add(marbleSpin);
+
+// ---- Face — a little pilot inside the ball (pure Monkey Ball) -------------
+// Eyes ride the squash wrapper (not the spinning mesh) so they stay upright,
+// facing the camera (+z). They blink, glance toward motion, and go wide on a fall.
+const eyeWhiteMat = new THREE.MeshBasicMaterial({color:0xffffff});
+const pupilMat = new THREE.MeshBasicMaterial({color:0x101418});
+function makeEye(sx){
+  const e=new THREE.Group();
+  const white=new THREE.Mesh(new THREE.SphereGeometry(0.135,16,16), eyeWhiteMat);
+  white.scale.z=0.45;
+  const pupil=new THREE.Mesh(new THREE.SphereGeometry(0.072,12,12), pupilMat);
+  pupil.position.set(0,0,0.09);
+  e.add(white); e.add(pupil);
+  e.position.set(sx,0.13,0.42);
+  e.userData.pupil=pupil;
+  return e;
+}
+const eyeL=makeEye(-0.17), eyeR=makeEye(0.17);
+const face=new THREE.Group(); face.add(eyeL,eyeR);
+marbleSpin.add(face);
 
 // ghost marble (your best run)
 const ghost = new THREE.Mesh(
@@ -358,7 +378,38 @@ function addGoal(g){
   );
   beam.position.set(g.x, 8, g.z); world.add(beam);
   const gl = new THREE.PointLight(0x66ffaa, 1.2, 14); gl.position.set(g.x,2,g.z); world.add(gl);
-  return {x:g.x,z:g.z,r:g.r,ring,beam};
+  const banner = makeLabel('GOAL', '#66ffaa');
+  banner.position.set(g.x, 3.2, g.z); world.add(banner);
+  return {x:g.x,z:g.z,r:g.r,ring,beam,banner};
+}
+
+// A glowing text sprite drawn to a canvas (used for the floating GOAL banner).
+function makeLabel(text, color){
+  const c=document.createElement('canvas'); c.width=256; c.height=128;
+  const x=c.getContext('2d');
+  x.font='bold 72px "Segoe UI", system-ui, sans-serif';
+  x.textAlign='center'; x.textBaseline='middle';
+  x.shadowColor=color; x.shadowBlur=26; x.fillStyle=color;
+  x.fillText(text,128,64); x.fillText(text,128,64);
+  const tex=new THREE.CanvasTexture(c); tex.anisotropy=4;
+  const m=new THREE.Mesh(new THREE.PlaneGeometry(3,1.5),
+    new THREE.MeshBasicMaterial({map:tex, transparent:true, depthWrite:false}));
+  return m;
+}
+
+// ---- Per-stage color themes (warm the world up, give each stage a mood) ---
+const THEMES = [
+  {bg:0x0a1622, density:0.016, sky:0x3a6f86, accent:0x37e6ff, edge:0x37e6ff}, // teal
+  {bg:0x150a22, density:0.017, sky:0x5a3a86, accent:0xb46cff, edge:0x9a6cff}, // violet dusk
+  {bg:0x1d1108, density:0.018, sky:0x86603a, accent:0xff9a3c, edge:0xffae5c}, // sunset
+];
+function applyTheme(i){
+  const th=THEMES[i%THEMES.length];
+  scene.background.setHex(th.bg);
+  scene.fog.color.setHex(th.bg); scene.fog.density=th.density;
+  hemi.color.setHex(th.sky);
+  rim.color.setHex(th.accent);
+  edgeMat.color.setHex(th.edge);
 }
 
 // ---- Particle bursts (confetti / banana sparkle / fall puff) -------------
@@ -573,6 +624,7 @@ function medalFor(i, time){
 
 function loadStage(i){
   clearWorld();
+  applyTheme(i);
   trailPts.length = 0;
   const L = LEVELS[i];
   stage = {plats:[], walls:[], gems:[], goal:null};
@@ -606,6 +658,7 @@ function loadStage(i){
   state.running=false; state.intro=2.0; state.went=false;
   showCountdown(true);
   setCountdownTick(2); // "READY?"
+  if(i===LEVELS.length-1) flash('FINAL STAGE');
 }
 
 function startGame(){
@@ -904,6 +957,7 @@ function updateGhost(){
 // ---- Loop ----------------------------------------------------------------
 let last = performance.now();
 let t = 0;
+let blink = 2, blinkT = 0;   // face: time-to-next-blink, blink-hold
 function frame(now){
   requestAnimationFrame(frame);
   let dt = (now-last)/1000; last=now;
@@ -971,6 +1025,23 @@ function frame(now){
   marble.material.opacity = 1; marble.material.transparent = phaseActive;
   if(phaseActive) marble.material.opacity = 0.55;
 
+  // ---- face: glance toward motion, blink, widen on a fall ----
+  const lookX = Math.max(-1,Math.min(1, vel.x*0.13));
+  const lookY = Math.max(-1,Math.min(1, -vel.z*0.13));
+  for(const e of [eyeL,eyeR]){
+    const p=e.userData.pupil, kk=Math.min(1,dt*12);
+    p.position.x += (lookX*0.05 - p.position.x)*kk;
+    p.position.y += (lookY*0.04 - p.position.y)*kk;
+  }
+  blink -= dt;
+  if(blink<=0){ blink = 2.4+Math.random()*3.2; blinkT = 0.12; }
+  if(blinkT>0) blinkT -= dt;
+  const falling = (!onGround && vel.y<-3 && state.running);
+  const openY = (blinkT>0 ? 0.12 : 1) * (falling ? 1.4 : 1);
+  eyeL.scale.y = eyeR.scale.y = openY;
+  eyeL.scale.x = eyeR.scale.x = falling ? 1.18 : 1;
+  pupilMat.color.setHex(phaseActive ? 0xff4fd8 : 0x101418);
+
   // phase-wall shimmer + open when phasing nearby
   if(stage){
     for(const w of stage.walls){
@@ -984,7 +1055,13 @@ function frame(now){
 
   // banana spin
   if(stage){ for(const g of stage.gems){ if(!g.got){ g.mesh.rotation.y+=dt*2; g.mesh.position.y=0.9+Math.sin(t*2+g.phase)*0.12; } } }
-  if(stage&&stage.goal){ stage.goal.ring.rotation.z+=dt*1.2; }
+  if(stage&&stage.goal){
+    stage.goal.ring.rotation.z+=dt*1.2;
+    if(stage.goal.banner){
+      stage.goal.banner.position.y = 3.2 + Math.sin(t*2)*0.18;
+      stage.goal.banner.lookAt(camera.position);
+    }
+  }
 
   // visual world lean (toward downhill)
   world.rotation.z = -tilt.x*TUNE.visualLean*5;
