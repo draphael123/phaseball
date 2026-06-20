@@ -19,6 +19,12 @@ soundtrack — all narrated by **the Circuit**, a dry, smug voice that quietly j
   and full-banana runs. Edit the `QUIPS` bank to change its personality.
 - **Juice** — countdown, screen shake, particle bursts, confetti at the goal, and a magenta
   vignette flash when you phase.
+- **A face in the ball** — eyes that blink and glance where you're rolling, a grin when you
+  grab a banana, a shocked "O" on a fall, and a dizzy spin after a hard landing.
+- **Chase camera** — the camera swings behind your direction of travel, with camera-relative
+  controls so "forward" always means away from the camera. Toggle via `TUNE.camFollow`.
+- **Par timer** — each stage has a `par`; the clock turns red and ticks in the final seconds,
+  and running out is a **TIME OVER** fail.
 - **Scoring & medals** — bananas pay out by combo; clears award time, medal (🥇/🥈/🥉),
   full-banana, and no-phase bonuses. A faint **ghost** of your best run replays alongside you.
 

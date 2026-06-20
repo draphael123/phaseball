@@ -27,7 +27,10 @@
   #topleft{top:14px; left:14px; font-size:14px; line-height:1.5}
   #topleft b{color:var(--cyan); font-weight:700}
   #topright{top:14px; right:14px; font-size:14px; text-align:right; line-height:1.5}
-  #timer{font-variant-numeric:tabular-nums; font-size:22px; color:#fff}
+  #timer{font-variant-numeric:tabular-nums; font-size:22px; color:#fff; transition:color .2s}
+  #timer.urgent{color:#ff5a6a; text-shadow:0 0 14px #ff2a44; animation:turg .5s infinite alternate}
+  @keyframes turg{from{transform:scale(1)}to{transform:scale(1.14)}}
+  #parLabel{font-size:11px; opacity:.55; letter-spacing:1px}
   .phasebars{display:flex; gap:6px; margin-top:6px; justify-content:flex-end}
   .pb{width:26px; height:8px; border-radius:4px; background:rgba(255,79,216,.18);
     border:1px solid rgba(255,79,216,.5)}
@@ -122,6 +125,7 @@
   </div>
   <div id="topright" class="panel">
     <div id="timer">0.00</div>
+    <div id="parLabel">PAR —</div>
     <div style="font-size:11px;opacity:.7;letter-spacing:2px">PHASE</div>
     <div class="phasebars" id="phasebars"></div>
     <div id="scoreLine">Score <b id="score">0</b></div>
@@ -184,6 +188,8 @@ const TUNE = {
   phaseTime: 1.1,      // seconds intangible per charge
   visualLean: 0.10,    // how much of maxTilt the world visibly tilts
   comboWindow: 2.6,    // seconds to keep a banana combo alive
+  camFollow: true,     // camera swings behind travel + camera-relative controls
+                       // (set false for a fixed camera + classic world-relative input)
 };
 
 // ---- Level data ----------------------------------------------------------
@@ -195,7 +201,7 @@ const LEVELS = [
     plats:[ {x:0,z:-8,w:7,d:28} ],                  // x[-3.5,3.5] z[-22,6]
     walls:[ {x:0,z:-8,w:7,d:1,phase:true} ],         // gate spans the whole corridor at z=-8
     gems:[ {x:0,z:1}, {x:1.4,z:-4}, {x:-1.2,z:-12}, {x:0,z:-16} ],
-    start:{x:0,z:3}, goal:{x:0,z:-19,r:1.5}, phaseCharges:1, medals:{g:9,s:13,b:20} },
+    start:{x:0,z:3}, goal:{x:0,z:-19,r:1.5}, phaseCharges:1, medals:{g:9,s:13,b:20}, par:40 },
 
   // 2: phase gate, then a solid wall you must route around to reach the goal.
   { name:'THE DIVIDE',
@@ -204,7 +210,7 @@ const LEVELS = [
     walls:[ {x:0,z:-6,w:7,d:1,phase:true},           // gate
             {x:0,z:-12,w:1,d:10} ],                  // solid divider x[-0.5,0.5] z[-17,-7]
     gems:[ {x:0,z:-2}, {x:3,z:-7}, {x:5,z:-13}, {x:-4,z:-9}, {x:-6,z:-15} ],
-    start:{x:0,z:4}, goal:{x:-6,z:-15,r:1.5}, phaseCharges:1, medals:{g:13,s:19,b:28} },
+    start:{x:0,z:4}, goal:{x:-6,z:-15,r:1.5}, phaseCharges:1, medals:{g:13,s:19,b:28}, par:55 },
 
   // 3: gate, a railed bridge over the void, a cross-leg, then a gate near the goal.
   { name:'CROSSWIRE',
@@ -216,7 +222,7 @@ const LEVELS = [
             {x:-3,z:-9,w:1,d:12}, {x:3,z:-9,w:1,d:12}, // bridge rails (x=±3)
             {x:13,z:0,w:6,d:1,phase:true} ],         // gate 2
     gems:[ {x:0,z:-2},{x:0,z:-10},{x:5,z:-13},{x:10,z:-13},{x:13,z:-8},{x:13,z:1} ],
-    start:{x:0,z:3}, goal:{x:13,z:2.5,r:1.5}, phaseCharges:2, medals:{g:17,s:25,b:36} },
+    start:{x:0,z:3}, goal:{x:13,z:2.5,r:1.5}, phaseCharges:2, medals:{g:17,s:25,b:36}, par:70 },
 ];
 
 // ---- Renderer / scene ----------------------------------------------------
@@ -287,7 +293,14 @@ function makeEye(sx){
   return e;
 }
 const eyeL=makeEye(-0.17), eyeR=makeEye(0.17);
-const face=new THREE.Group(); face.add(eyeL,eyeR);
+// two swappable mouths: a smile arc and a shocked "O"
+const mouthMat = new THREE.MeshBasicMaterial({color:0x101418});
+const mouthSmile = new THREE.Mesh(new THREE.TorusGeometry(0.12,0.028,8,20,Math.PI), mouthMat);
+mouthSmile.rotation.z = Math.PI;                 // opening up -> a smile
+mouthSmile.position.set(0,-0.10,0.43);
+const mouthO = new THREE.Mesh(new THREE.TorusGeometry(0.07,0.03,8,16), mouthMat);
+mouthO.rotation.x = Math.PI/2; mouthO.position.set(0,-0.10,0.43); mouthO.visible=false;
+const face=new THREE.Group(); face.add(eyeL,eyeR,mouthSmile,mouthO);
 marbleSpin.add(face);
 
 // ghost marble (your best run)
@@ -306,8 +319,8 @@ scene.add(trail);
 const trailPts = [];
 
 // ---- Build helpers -------------------------------------------------------
-const platMat = new THREE.MeshStandardMaterial({color:0x14223f, roughness:.85, metalness:.1});
-const edgeMat = new THREE.LineBasicMaterial({color:0x37e6ff, transparent:true, opacity:.55});
+const platMat = new THREE.MeshStandardMaterial({color:0x1c2f55, roughness:.8, metalness:.12, emissive:0x0a1426, emissiveIntensity:.4});
+const edgeMat = new THREE.LineBasicMaterial({color:0x37e6ff, transparent:true, opacity:.7});
 const wallMat = new THREE.MeshStandardMaterial({color:0x2a4d77, roughness:.6, emissive:0x0a2236, emissiveIntensity:.5});
 const phaseMatBase = {color:0xff4fd8, roughness:.3, transmission:.5, thickness:.4, transparent:true, opacity:.5, emissive:0xff4fd8, emissiveIntensity:.6};
 
@@ -557,6 +570,9 @@ const QUIPS = {
           "Down you go. I'll keep your spot warm.",
           "That was a decision. A bold, terrible decision.",
           "Falling: still not a valid route."],
+  timeover: ["Time's up. The clock, at least, is decisive.",
+             "Too slow. I aged waiting.",
+             "TIME OVER. Sightseeing is not a strategy."],
   noPhase: ["Out of phase, out of luck.",
             "You spent those rather generously, didn't you.",
             "No charges left. Improvise. Or don't."],
@@ -603,7 +619,11 @@ const state = {
   best:[null,null,null], won:false,
   score:0, combo:0, comboTimer:0, phaseUsed:0,
   intro:0, went:false, shake:0, squash:0, idle:0, idleFired:false,
+  happy:0, dizzy:0, lastTick:99,
 };
+// camera heading (eased toward direction of travel) + camera-relative input
+let chx=0, chz=-1;                 // smoothed travel heading (starts: away from camera)
+const rawInput = {x:0, z:0};      // pre-transform input (keyboard or touch)
 try{ const b=JSON.parse(localStorage.getItem('phaseball_best')||'[]'); if(Array.isArray(b)) state.best=b; }catch(e){}
 
 // ghost recording / playback
@@ -638,11 +658,15 @@ function loadStage(i){
   state.phasing = 0; state.time = 0; state.won = false;
   state.combo = 0; state.comboTimer = 0; state.phaseUsed = 0;
   state.idle = 0; state.idleFired = false;
+  state.happy = 0; state.dizzy = 0; state.lastTick = 99;
 
   pos.set(L.start.x, TUNE.radius, L.start.z);
   vel.set(0,0,0); tilt.x=tilt.z=0; tiltTarget.x=tiltTarget.z=0;
+  rawInput.x=0; rawInput.z=0;
+  chx=0; chz=-1;                                  // reset camera heading (look down -z)
+  camPos.set(L.start.x, TUNE.radius+11, L.start.z+12);  // snap camera behind start
   marbleSpin.position.copy(pos); marble.position.set(0,0,0); marble.rotation.set(0,0,0);
-  marbleSpin.scale.set(1,1,1);
+  marbleSpin.scale.set(1,1,1); face.rotation.set(0,0,0);
 
   // ghost setup
   rec=[]; recT=0;
@@ -651,6 +675,8 @@ function loadStage(i){
 
   document.getElementById('stageNum').textContent = i+1;
   document.getElementById('shardsTot').textContent = state.shardsTotal;
+  document.getElementById('parLabel').textContent = L.par? 'PAR '+L.par+'s' : '';
+  document.getElementById('timer').classList.remove('urgent');
   document.getElementById('subtitle').textContent = 'STAGE '+(i+1)+' · '+L.name;
   updateHud();
 
@@ -782,13 +808,13 @@ if(matchMedia('(pointer:coarse)').matches){ document.body.classList.add('touch')
   function setNub(dx,dy){
     const max=35, d=Math.hypot(dx,dy), s=d>max?max/d:1;
     nub.style.left=(35+dx*s)+'px'; nub.style.top=(35+dy*s)+'px';
-    tiltTarget.x = Math.max(-1,Math.min(1,dx/max));
-    tiltTarget.z = Math.max(-1,Math.min(1,dy/max));
+    rawInput.x = Math.max(-1,Math.min(1,dx/max));
+    rawInput.z = Math.max(-1,Math.min(1,dy/max));
   }
   stick.addEventListener('pointerdown',e=>{active=true; const r=stick.getBoundingClientRect();
     cx=r.left+r.width/2; cy=r.top+r.height/2; setNub(e.clientX-cx,e.clientY-cy); stick.setPointerCapture(e.pointerId);});
   stick.addEventListener('pointermove',e=>{ if(active) setNub(e.clientX-cx,e.clientY-cy); });
-  function end(){ active=false; nub.style.left='35px'; nub.style.top='35px'; tiltTarget.x=0; tiltTarget.z=0; }
+  function end(){ active=false; nub.style.left='35px'; nub.style.top='35px'; rawInput.x=0; rawInput.z=0; }
   stick.addEventListener('pointerup',end); stick.addEventListener('pointercancel',end);
   document.getElementById('phaseBtn').addEventListener('pointerdown',e=>{e.preventDefault();tryPhase();});
 })();
@@ -833,14 +859,24 @@ function resolveWalls(){
 
 let onGround=false;
 function step(dt){
-  // input -> tilt target (keyboard)
-  let ix=0, iz=0;
-  if(keys['KeyD']||keys['ArrowRight']) ix+=1;
-  if(keys['KeyA']||keys['ArrowLeft'])  ix-=1;
-  if(keys['KeyS']||keys['ArrowDown'])  iz+=1;
-  if(keys['KeyW']||keys['ArrowUp'])    iz-=1;
-  if(ix||iz){ tiltTarget.x=ix; tiltTarget.z=iz; }
-  else if(!document.body.classList.contains('touch')){ tiltTarget.x=0; tiltTarget.z=0; }
+  // gather raw input (keyboard here; touch sets rawInput in its handler)
+  if(!document.body.classList.contains('touch')){
+    let ix=0, iz=0;
+    if(keys['KeyD']||keys['ArrowRight']) ix+=1;
+    if(keys['KeyA']||keys['ArrowLeft'])  ix-=1;
+    if(keys['KeyS']||keys['ArrowDown'])  iz+=1;
+    if(keys['KeyW']||keys['ArrowUp'])    iz-=1;
+    rawInput.x=ix; rawInput.z=iz;
+  }
+  // make input camera-relative: forward (W) = the way the camera looks,
+  // so controls stay intuitive even as the camera swings behind your motion.
+  if(rawInput.x||rawInput.z){
+    const fX=chx, fZ=chz, rX=-chz, rZ=chx;       // forward = heading, right = perp
+    let tx = rawInput.x*rX + (-rawInput.z)*fX;
+    let tz = rawInput.x*rZ + (-rawInput.z)*fZ;
+    const m=Math.hypot(tx,tz); if(m>1){ tx/=m; tz/=m; }
+    tiltTarget.x=tx; tiltTarget.z=tz;
+  } else { tiltTarget.x=0; tiltTarget.z=0; }
 
   // ease tilt
   const k = 1-Math.exp(-TUNE.tiltLerp*dt);
@@ -873,10 +909,11 @@ function step(dt){
     onGround=false;
     if(restY!==null && pos.y<restY){ pos.y=restY; vel.y=0; onGround=true; }
   }
-  // landing impact -> squash + thud
+  // landing impact -> squash + thud (+ dizzy on a big drop)
   if(onGround && wasAir && vyBefore < -4){
     const impact=-vyBefore; state.squash=Math.min(1, impact/14);
     state.shake=Math.max(state.shake, Math.min(0.4, impact*0.025));
+    if(impact>9) state.dizzy=1.0;
     Audio.land(impact);
   }
 
@@ -885,7 +922,7 @@ function step(dt){
     if(g.got) continue;
     if(Math.hypot(pos.x-g.x, pos.z-g.z)<0.7 && Math.abs(pos.y-0.9)<1.2){
       g.got=true; g.mesh.visible=false; state.shards++;
-      state.combo++; state.comboTimer=TUNE.comboWindow;
+      state.combo++; state.comboTimer=TUNE.comboWindow; state.happy=0.6;
       state.score += 100*state.combo;
       Audio.banana(state.combo);
       burst(g.x, 0.9, g.z, {count:16,color:0xffd24a,speed:5,size:0.16,life:0.6});
@@ -906,6 +943,15 @@ function step(dt){
   if(pos.y<TUNE.killY){
     flash('FELL'); Audio.fall(); quip('death', 2800); state.shake=0;
     loadStage(state.stageIdx);
+    return;
+  }
+
+  // time over (par timer)
+  const par = LEVELS[state.stageIdx].par;
+  if(par && state.time>par){
+    flash('TIME OVER'); Audio.fall(); quip('timeover', 2800); state.shake=0;
+    loadStage(state.stageIdx);
+    return;
   }
 }
 
@@ -934,10 +980,18 @@ function updateHud(){
 const camPos = new THREE.Vector3(0,11,12);
 const camLook = new THREE.Vector3();
 function updateCamera(dt){
-  const desired = new THREE.Vector3(pos.x, pos.y+11, pos.z+12);
-  camPos.lerp(desired, 1-Math.exp(-4*dt));
+  // ease the camera heading toward the direction of travel (when moving)
+  const sp=Math.hypot(vel.x,vel.z);
+  if(TUNE.camFollow && sp>2.2){
+    const hx=vel.x/sp, hz=vel.z/sp, r=1-Math.exp(-1.8*dt);
+    chx+=(hx-chx)*r; chz+=(hz-chz)*r;
+    const m=Math.hypot(chx,chz)||1; chx/=m; chz/=m;
+  }
+  // camera sits behind the heading, looks slightly ahead of the marble
+  const desired = new THREE.Vector3(pos.x - chx*12, pos.y+11, pos.z - chz*12);
+  camPos.lerp(desired, 1-Math.exp(-3.5*dt));
   camera.position.copy(camPos);
-  camLook.lerp(new THREE.Vector3(pos.x, pos.y, pos.z-2), 1-Math.exp(-6*dt));
+  camLook.lerp(new THREE.Vector3(pos.x + chx*2, pos.y, pos.z + chz*2), 1-Math.exp(-6*dt));
   camera.lookAt(camLook);
 }
 
@@ -981,7 +1035,16 @@ function frame(now){
     let acc = dt; const h=1/120;
     while(acc>0){ const s=Math.min(h,acc); step(s); acc-=s; }
     state.time += dt;
-    document.getElementById('timer').textContent = state.time.toFixed(2);
+    const tEl=document.getElementById('timer');
+    tEl.textContent = state.time.toFixed(2);
+    // par-timer urgency: red pulse + ticking in the final 8 seconds
+    const par=LEVELS[state.stageIdx].par;
+    if(par){
+      const rem=par-state.time;
+      if(rem<=8){ tEl.classList.add('urgent'); const s=Math.ceil(Math.max(0,rem));
+        if(s!==state.lastTick){ state.lastTick=s; if(s>0) Audio.tick(0); } }
+      else { tEl.classList.remove('urgent'); state.lastTick=99; }
+    }
 
     // phase timer
     if(state.phasing>0){ state.phasing=Math.max(0,state.phasing-dt); }
@@ -1025,22 +1088,34 @@ function frame(now){
   marble.material.opacity = 1; marble.material.transparent = phaseActive;
   if(phaseActive) marble.material.opacity = 0.55;
 
-  // ---- face: glance toward motion, blink, widen on a fall ----
-  const lookX = Math.max(-1,Math.min(1, vel.x*0.13));
-  const lookY = Math.max(-1,Math.min(1, -vel.z*0.13));
+  // ---- face: expressions (glance, blink, shock, grin, dizzy) ----
+  state.happy = Math.max(0, state.happy - dt);
+  state.dizzy = Math.max(0, state.dizzy - dt);
+  const falling = (!onGround && vel.y<-3 && state.running);
+  const happy = state.happy>0, dizzy = state.dizzy>0;
   for(const e of [eyeL,eyeR]){
     const p=e.userData.pupil, kk=Math.min(1,dt*12);
-    p.position.x += (lookX*0.05 - p.position.x)*kk;
-    p.position.y += (lookY*0.04 - p.position.y)*kk;
+    if(dizzy){ p.position.x=Math.cos(t*16)*0.05; p.position.y=Math.sin(t*16)*0.045; }
+    else {
+      const lx=Math.max(-1,Math.min(1,vel.x*0.13))*0.05, ly=Math.max(-1,Math.min(1,-vel.z*0.13))*0.04;
+      p.position.x += (lx-p.position.x)*kk; p.position.y += (ly-p.position.y)*kk;
+    }
   }
   blink -= dt;
   if(blink<=0){ blink = 2.4+Math.random()*3.2; blinkT = 0.12; }
   if(blinkT>0) blinkT -= dt;
-  const falling = (!onGround && vel.y<-3 && state.running);
-  const openY = (blinkT>0 ? 0.12 : 1) * (falling ? 1.4 : 1);
+  let openY = blinkT>0 ? 0.12 : 1, openX = 1;
+  if(falling){ openY*=1.4; openX=1.18; }       // shocked, wide
+  else if(happy){ openY*=0.5; }                // squint-grin
   eyeL.scale.y = eyeR.scale.y = openY;
-  eyeL.scale.x = eyeR.scale.x = falling ? 1.18 : 1;
+  eyeL.scale.x = eyeR.scale.x = openX;
   pupilMat.color.setHex(phaseActive ? 0xff4fd8 : 0x101418);
+  // mouth: shocked "O" while falling, otherwise a smile that grows when happy/phasing
+  mouthO.visible = falling; mouthSmile.visible = !falling;
+  const sm = happy ? 1.5 : (phaseActive ? 1.2 : 1);
+  mouthSmile.scale.set(sm, sm, 1);
+  // dizzy head wobble (eases back to upright)
+  face.rotation.z = dizzy ? Math.sin(t*22)*0.35*state.dizzy : face.rotation.z*(1-Math.min(1,dt*10));
 
   // phase-wall shimmer + open when phasing nearby
   if(stage){
