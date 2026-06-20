@@ -62,6 +62,16 @@
   .rtotal{display:flex; justify-content:space-between; margin-top:6px; padding:6px 8px;
     border-top:1px solid rgba(55,230,255,.25); font-size:14px}
   .rtotal b{color:var(--gold)}
+  .lvlhead{font-size:11px; letter-spacing:3px; color:#ff8ad6; opacity:.8; margin:2px 0 8px; text-transform:uppercase}
+  .lvlsel{display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-bottom:16px}
+  .lvlchip{pointer-events:auto; cursor:pointer; min-width:96px; padding:8px 10px; border-radius:10px;
+    background:rgba(55,230,255,.08); border:1px solid rgba(55,230,255,.35); text-align:left;
+    transition:transform .08s, box-shadow .15s, background .15s}
+  .lvlchip:hover{transform:translateY(-2px); background:rgba(55,230,255,.16);
+    box-shadow:0 0 16px rgba(55,230,255,.45)}
+  .lvlchip .ln{font-size:10px; letter-spacing:1px; color:var(--cyan)}
+  .lvlchip .lname{font-size:12px; font-weight:700; letter-spacing:1px; color:#fff; font-style:italic}
+  .lvlchip .lbest{font-size:10px; opacity:.7; font-variant-numeric:tabular-nums}
   #center .keys{font-size:12px; opacity:.7; line-height:1.9; margin-bottom:18px}
   #center .keys kbd{display:inline-block; min-width:20px; padding:2px 7px; margin:0 2px;
     background:rgba(55,230,255,.12); border:1px solid rgba(55,230,255,.4); border-radius:6px;
@@ -170,6 +180,8 @@
       <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / arrows — tilt &nbsp;·&nbsp;
       <kbd>Space</kbd> — turbo dash &nbsp;·&nbsp; <kbd>R</kbd> — restart &nbsp;·&nbsp; <kbd>M</kbd> — mute
     </div>
+    <div class="lvlhead">Select Stage</div>
+    <div class="lvlsel" id="levelSelect"></div>
     <button class="btn" id="startBtn">Press Start</button>
   </div>
 </div>
@@ -278,7 +290,7 @@ app.appendChild(renderer.domElement);
 
 // Post-processing (bloom) + environment reflections, loaded async so the game
 // still runs if the CDN addons are ever unreachable (falls back to plain render).
-let composer=null, bloomPass=null;
+let composer=null, bloomPass=null, rgbPass=null;
 (async()=>{
   try{
     const A='three/addons/';
@@ -295,8 +307,8 @@ let composer=null, bloomPass=null;
     composer.addPass(new RenderPass(scene, camera));
     bloomPass=new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight), 0.9, 0.65, 0.8);
     composer.addPass(bloomPass);
-    const rgb=new ShaderPass(RGBShiftShader); rgb.uniforms.amount.value=0.0014;  // VHS color fringe
-    composer.addPass(rgb);
+    rgbPass=new ShaderPass(RGBShiftShader); rgbPass.uniforms.amount.value=0.0014;  // VHS color fringe
+    composer.addPass(rgbPass);
     composer.addPass(new FilmPass(0.25));                                        // scanlines + grain
     composer.addPass(new OutputPass());
     composer.setSize(innerWidth, innerHeight);
@@ -391,6 +403,13 @@ const ghost = new THREE.Mesh(
   new THREE.MeshBasicMaterial({color:0xbfefff, transparent:true, opacity:0.18, depthWrite:false})
 );
 ghost.visible = false; scene.add(ghost);
+
+// dash shockwave ring (expands + fades on each dash)
+const shockRing = new THREE.Mesh(
+  new THREE.TorusGeometry(0.6, 0.08, 12, 40),
+  new THREE.MeshBasicMaterial({color:0x6ff0ff, transparent:true, opacity:0, depthWrite:false, blending:THREE.AdditiveBlending})
+);
+shockRing.rotation.x = Math.PI/2; shockRing.visible=false; scene.add(shockRing);
 
 // trail
 const TRAIL_N = 24;
@@ -801,6 +820,7 @@ const state = {
   score:0, combo:0, comboTimer:0,
   intro:0, went:false, shake:0, squash:0, idle:0, idleFired:false,
   happy:0, dizzy:0, lastTick:99, attract:false,
+  hitstop:0, fovKick:0, shockT:0,   // dash juice: freeze-frame, FOV punch, shockwave
 };
 // camera heading (eased toward direction of travel) + camera-relative input
 let chx=0, chz=-1;                 // smoothed travel heading (starts: away from camera)
@@ -876,13 +896,27 @@ function loadStage(i, attract=false){
   if(i===LEVELS.length-1) flash('FINAL STAGE');
 }
 
-function startGame(){
+function startGame(fromStage=0){
   Audio.resume(); Audio.startMusic();
-  state.stageIdx = 0; state.running = false; state.score = 0;
+  state.stageIdx = fromStage; state.running = false; state.score = 0;
   document.getElementById('center').classList.add('hidden');
   document.getElementById('score').textContent = '0';
   quip('start', 4200);
-  loadStage(0);
+  loadStage(fromStage);
+}
+
+// title-screen stage picker (jump straight to any stage)
+function populateLevelSelect(){
+  const wrap=document.getElementById('levelSelect'); wrap.innerHTML='';
+  LEVELS.forEach((L,i)=>{
+    const b=state.best[i], med=medalFor(i,b);
+    const chip=document.createElement('div'); chip.className='lvlchip';
+    chip.innerHTML='<div class="ln">STAGE '+(i+1)+'</div>'+
+      '<div class="lname">'+L.name+'</div>'+
+      '<div class="lbest">'+(b!=null? b.toFixed(2)+'s '+med : '— —')+'</div>';
+    chip.onclick=()=>{ Audio.resume(); Audio.ui(); startGame(i); };
+    wrap.appendChild(chip);
+  });
 }
 
 function restartStage(){ if(state.intro>0 || state.running) loadStage(state.stageIdx); }
@@ -947,6 +981,7 @@ function winGame(){
     '<div class="rtotal"><span>TOTAL '+total+'s</span><span>SCORE <b>'+state.score+'</b></span></div></div>';
   document.getElementById('keysHelp').classList.add('hidden');
   document.getElementById('startBtn').textContent='Play Again';
+  populateLevelSelect();   // refresh best times/medals on the picker
   quip('win', 5000);
 }
 
@@ -1001,7 +1036,10 @@ function tryDash(){
   const m=Math.hypot(dx,dz)||1; dx/=m; dz/=m;
   vel.x += dx*TUNE.dashBoost; vel.z += dz*TUNE.dashBoost;
   state.energy -= TUNE.dashCost; state.dashing = TUNE.dashTime; state.dashUsed++;
-  Audio.dash(); pulseVignette(); state.shake=Math.max(state.shake,0.16);
+  // juice: FOV punch, camera kick, shockwave ring
+  Audio.dash(); pulseVignette();
+  state.shake=Math.max(state.shake,0.22); state.fovKick=Math.max(state.fovKick,9);
+  shockRing.position.set(pos.x,0.5,pos.z); shockRing.scale.setScalar(1); state.shockT=0.42;
   updateHud();
 }
 
@@ -1070,7 +1108,8 @@ function breakWall(w){
   w.broken=true; if(w.mesh) w.mesh.visible=false;
   burst(w.x, (w.h||1.2)*0.5, w.z, {count:30, color:0xff4fd8, speed:9, size:0.22, life:0.8, up:0.9});
   burst(w.x, (w.h||1.2)*0.5, w.z, {count:14, color:0xffffff, speed:6, size:0.16, life:0.6, up:1.0});
-  Audio.smash(); state.shake=Math.max(state.shake,0.32);
+  Audio.smash(); state.shake=Math.max(state.shake,0.38);
+  state.hitstop=Math.max(state.hitstop,0.07);   // crunchy freeze-frame on impact
 }
 
 let onGround=false;
@@ -1200,6 +1239,7 @@ if(matchMedia('(pointer:coarse)').matches){
   camDist=15; camHeight=13.5; camLerp=3.0; camHeadRate=1.1;
   camera.fov=62; camera.updateProjectionMatrix();
 }
+const baseFov = camera.fov;   // dash punches FOV out from here, then eases back
 function updateCamera(dt){
   // attract mode: slow cinematic orbit around the stage (title + results)
   if(state.attract){
@@ -1264,7 +1304,9 @@ function frame(now){
     if(state.intro<=0.4){ showCountdown(false); }
   }
 
-  if(state.running){
+  if(state.running && state.hitstop>0){
+    state.hitstop=Math.max(0,state.hitstop-dt);   // freeze-frame: hold the sim, keep rendering
+  } else if(state.running){
     // fixed substeps for stable physics
     let acc = dt; const h=1/120;
     while(acc>0){ const s=Math.min(h,acc); step(s); acc-=s; }
@@ -1407,10 +1449,25 @@ function frame(now){
   if(dustPts) dustPts.rotation.y += dt*0.015;
   updateEnergyBar();
 
+  // dash juice: FOV punch eases back, shockwave ring expands+fades, RGB pulse
+  if(state.fovKick>0.05){
+    camera.fov = baseFov + state.fovKick; camera.updateProjectionMatrix();
+    state.fovKick *= Math.exp(-7*dt); if(state.fovKick<=0.05){ state.fovKick=0; camera.fov=baseFov; camera.updateProjectionMatrix(); }
+  }
+  if(state.shockT>0){
+    state.shockT=Math.max(0,state.shockT-dt);
+    const k=1-state.shockT/0.42;                  // 0 -> 1 over its life
+    shockRing.visible=true; shockRing.scale.setScalar(1+k*7);
+    shockRing.position.set(pos.x,0.5,pos.z);
+    shockRing.material.opacity=(1-k)*0.8;
+  } else shockRing.visible=false;
+  if(rgbPass) rgbPass.uniforms.amount.value += ((dashActive?0.004:0.0014)-rgbPass.uniforms.amount.value)*Math.min(1,dt*8);
+
   if(composer) composer.render(); else renderer.render(scene, camera);
 }
-// boot: show the level count and spin up the attract scene behind the title
+// boot: show the level count, build the stage picker, spin up the attract scene
 document.getElementById('stageTot').textContent = LEVELS.length;
+populateLevelSelect();
 loadStage(0, true);
 requestAnimationFrame(frame);
 

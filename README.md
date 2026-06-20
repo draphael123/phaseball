@@ -23,7 +23,10 @@ soundtrack — all narrated by **the Circuit**, a dry, smug voice that quietly j
 - **Narrator** — "the Circuit" reacts to deaths, fast clears, empty turbo, idling, and
   full-banana runs. Edit the `QUIPS` bank to change its personality.
 - **Juice** — countdown, screen shake, particle bursts, confetti at the goal, barrier debris,
-  and a vignette flash when you dash.
+  and a vignette flash when you dash. Dashing also punches the FOV out, fires a shockwave ring,
+  pulses the chromatic aberration, and a barrier smash adds a crunchy freeze-frame (hitstop).
+- **Level select** — pick any of the 5 stages from the title/results screen (with each stage's
+  best time + medal); **Press Start** runs the full circuit from stage 1.
 - **A face in the ball** — eyes that blink and glance where you're rolling, a grin when you
   grab a banana, a shocked "O" on a fall, and a dizzy spin after a hard landing.
 - **Chase camera** — the camera swings behind your direction of travel, with camera-relative
