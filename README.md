@@ -26,6 +26,10 @@ soundtrack — all narrated by **the Circuit**, a dry, smug voice that quietly j
   controls so "forward" always means away from the camera. Toggle via `TUNE.camFollow`.
 - **Par timer** — each stage has a `par`; the clock turns red and ticks in the final seconds,
   and running out is a **TIME OVER** fail.
+- **Visuals** — bloom post-processing + ACES tone mapping make the neon glow, environment-map
+  reflections on the glass marble, per-stage gradient skies, a synthwave grid floor for depth,
+  and drifting dust. Post-processing loads from the CDN and gracefully falls back to a plain
+  render if unavailable.
 - **Attract mode** — the title screen and results board orbit a live stage in the background.
 - **Results board** — finishing shows a per-stage breakdown of best times and medals, plus
   total time and score.

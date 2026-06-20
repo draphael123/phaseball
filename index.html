@@ -174,7 +174,10 @@
 </div>
 
 <script type="importmap">
-{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
 </script>
 <script type="module">
 import * as THREE from 'three';
@@ -263,7 +266,33 @@ renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;   // filmic highlights for the neon
+renderer.toneMappingExposure = 1.15;
 app.appendChild(renderer.domElement);
+
+// Post-processing (bloom) + environment reflections, loaded async so the game
+// still runs if the CDN addons are ever unreachable (falls back to plain render).
+let composer=null, bloomPass=null;
+(async()=>{
+  try{
+    const A='three/addons/';
+    const [{EffectComposer},{RenderPass},{UnrealBloomPass},{OutputPass},{RoomEnvironment}] = await Promise.all([
+      import(A+'postprocessing/EffectComposer.js'),
+      import(A+'postprocessing/RenderPass.js'),
+      import(A+'postprocessing/UnrealBloomPass.js'),
+      import(A+'postprocessing/OutputPass.js'),
+      import(A+'environments/RoomEnvironment.js'),
+    ]);
+    const pmrem=new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;  // soft reflections
+    composer=new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    bloomPass=new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight), 0.75, 0.6, 0.85);
+    composer.addPass(bloomPass);
+    composer.addPass(new OutputPass());
+    composer.setSize(innerWidth, innerHeight);
+  }catch(e){ console.warn('PHASEBALL: post-processing unavailable, using basic renderer.', e); composer=null; }
+})();
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x070912);
@@ -441,19 +470,56 @@ function makeLabel(text, color){
   return m;
 }
 
+// ---- Atmosphere: gradient sky, synthwave grid floor, drifting dust --------
+function makeSky(top, bot){
+  const c=document.createElement('canvas'); c.width=8; c.height=256;
+  const x=c.getContext('2d');
+  const g=x.createLinearGradient(0,0,0,256);
+  g.addColorStop(0,top); g.addColorStop(1,bot);
+  x.fillStyle=g; x.fillRect(0,0,8,256);
+  const tex=new THREE.CanvasTexture(c); tex.colorSpace=THREE.SRGBColorSpace;
+  return tex;
+}
+const skyCache={};
+function skyFor(i,top,bot){ return skyCache[i] || (skyCache[i]=makeSky(top,bot)); }
+
+function makeGridTexture(){
+  const c=document.createElement('canvas'); c.width=c.height=128;
+  const x=c.getContext('2d'); x.clearRect(0,0,128,128);
+  x.strokeStyle='#fff'; x.lineWidth=3; x.strokeRect(0,0,128,128);
+  const tex=new THREE.CanvasTexture(c);
+  tex.wrapS=tex.wrapT=THREE.RepeatWrapping; tex.repeat.set(60,60);
+  return tex;
+}
+const gridMat=new THREE.MeshBasicMaterial({map:makeGridTexture(), transparent:true,
+  opacity:0.16, color:0x37e6ff, blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.DoubleSide});
+const gridFloor=new THREE.Mesh(new THREE.PlaneGeometry(600,600), gridMat);
+gridFloor.rotation.x=-Math.PI/2; gridFloor.position.y=-3.2; scene.add(gridFloor);
+
+let dustPts;
+(function dust(){
+  const n=150, p=new Float32Array(n*3);
+  for(let i=0;i<n;i++){ p[i*3]=3+(Math.random()-.5)*120; p[i*3+1]=Math.random()*24-3; p[i*3+2]=-8+(Math.random()-.5)*120; }
+  const g=new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(p,3));
+  dustPts=new THREE.Points(g, new THREE.PointsMaterial({color:0x9fd8ff, size:0.12,
+    transparent:true, opacity:0.5, depthWrite:false, blending:THREE.AdditiveBlending}));
+  scene.add(dustPts);
+})();
+
 // ---- Per-stage color themes (warm the world up, give each stage a mood) ---
 const THEMES = [
-  {bg:0x0a1622, density:0.016, sky:0x3a6f86, accent:0x37e6ff, edge:0x37e6ff}, // teal
-  {bg:0x150a22, density:0.017, sky:0x5a3a86, accent:0xb46cff, edge:0x9a6cff}, // violet dusk
-  {bg:0x1d1108, density:0.018, sky:0x86603a, accent:0xff9a3c, edge:0xffae5c}, // sunset
+  {bgTop:'#06101c', bgBot:'#102538', fog:0x102538, density:0.014, sky:0x3a6f86, accent:0x37e6ff, edge:0x37e6ff}, // teal
+  {bgTop:'#0c0618', bgBot:'#26123c', fog:0x26123c, density:0.015, sky:0x5a3a86, accent:0xb46cff, edge:0x9a6cff}, // violet dusk
+  {bgTop:'#160a06', bgBot:'#301a10', fog:0x301a10, density:0.016, sky:0x86603a, accent:0xff9a3c, edge:0xffae5c}, // sunset
 ];
 function applyTheme(i){
   const th=THEMES[i%THEMES.length];
-  scene.background.setHex(th.bg);
-  scene.fog.color.setHex(th.bg); scene.fog.density=th.density;
+  scene.background = skyFor(i, th.bgTop, th.bgBot);
+  scene.fog.color.setHex(th.fog); scene.fog.density=th.density;
   hemi.color.setHex(th.sky);
   rim.color.setHex(th.accent);
   edgeMat.color.setHex(th.edge);
+  gridMat.color.setHex(th.accent);
 }
 
 // ---- Particle bursts (confetti / banana sparkle / fall puff) -------------
@@ -1236,7 +1302,12 @@ function frame(now){
     state.shake *= Math.exp(-8*dt); if(state.shake<0.01) state.shake=0;
   }
 
-  renderer.render(scene, camera);
+  // atmosphere drift: keep the grid under the view (snapped so it reads as infinite)
+  gridFloor.position.x = Math.round(camera.position.x/10)*10;
+  gridFloor.position.z = Math.round(camera.position.z/10)*10;
+  if(dustPts) dustPts.rotation.y += dt*0.015;
+
+  if(composer) composer.render(); else renderer.render(scene, camera);
 }
 // boot: show the level count and spin up the attract scene behind the title
 document.getElementById('stageTot').textContent = LEVELS.length;
@@ -1246,6 +1317,7 @@ requestAnimationFrame(frame);
 addEventListener('resize', ()=>{
   camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
+  if(composer){ composer.setSize(innerWidth,innerHeight); if(bloomPass) bloomPass.setSize(innerWidth,innerHeight); }
 });
 
 // expose harness for automated preview testing
