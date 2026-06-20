@@ -59,7 +59,8 @@ soundtrack — all narrated by **the Circuit**, a dry, smug voice that quietly j
 - **Space** — turbo dash (boost along your heading; smashes magenta barriers)
 - **R** — restart stage
 - **M** — mute / unmute
-- Mobile: on-screen stick + TURBO button (auto-detected)
+- Mobile: on-screen stick + TURBO + restart buttons (auto-detected); **Performance mode**
+  (lighter shadows/bloom/pixel-ratio) defaults on for touch and is toggleable in Settings
 
 ## Tech
 Single file, no build step. Three.js loaded from CDN via importmap. The whole game is in

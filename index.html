@@ -170,6 +170,10 @@
     border-radius:50%; background:rgba(255,79,216,.25); border:2px solid var(--magenta);
     color:#fff; font-size:14px; letter-spacing:2px; box-shadow:0 0 18px rgba(255,79,216,.5);
     display:flex; align-items:center; justify-content:center; pointer-events:auto}
+  #restartBtn{position:absolute; right:46px; bottom:166px; width:54px; height:54px;
+    border-radius:50%; background:rgba(10,16,34,.5); border:1px solid rgba(55,230,255,.4);
+    color:#cfe; font-size:24px; display:flex; align-items:center; justify-content:center;
+    pointer-events:auto}
   body.touch #touch{display:block}
 </style>
 </head>
@@ -214,6 +218,7 @@
     <div class="setrow"><span>Screen shake</span><button class="settoggle" id="setShake">On</button></div>
     <div class="setrow"><span>Chase camera</span><button class="settoggle" id="setCam">On</button></div>
     <div class="setrow"><span>Retro filter</span><button class="settoggle" id="setScan">On</button></div>
+    <div class="setrow"><span>Performance mode</span><button class="settoggle" id="setPerf">Off</button></div>
     <button id="setReset">Reset best times &amp; ghosts</button>
     <button class="btn" id="setClose">Close</button>
   </div>
@@ -248,6 +253,7 @@
 <div id="touch">
   <div id="stick"><div id="nub"></div></div>
   <div id="phaseBtn">TURBO</div>
+  <div id="restartBtn" title="Restart">⟲</div>
 </div>
 
 <script type="importmap">
@@ -1094,20 +1100,31 @@ setMute(Audio.muted);
 document.getElementById('mute').onclick=()=>{ Audio.resume(); setMute(Audio.toggleMute()); };
 
 // ---- Settings ------------------------------------------------------------
-const settings = { music:0.8, sfx:0.9, shake:true, camera:true, retro:true };
+// Performance mode defaults ON for touch/mobile (lighter GPU load).
+const settings = { music:0.8, sfx:0.9, shake:true, camera:true, retro:true,
+  perf: matchMedia('(pointer:coarse)').matches };
 try{ Object.assign(settings, JSON.parse(localStorage.getItem('phaseball_settings')||'{}')); }catch(e){}
 function saveSettings(){ localStorage.setItem('phaseball_settings', JSON.stringify(settings)); }
+function applyPerf(){
+  const p=settings.perf;
+  renderer.setPixelRatio(Math.min(devicePixelRatio, p?1:2));
+  renderer.shadowMap.enabled = !p; key.castShadow = !p; renderer.shadowMap.needsUpdate = true;
+  if(bloomPass) bloomPass.strength = p?0.5:0.9;     // keep the glow, just lighter on phones
+  renderer.setSize(innerWidth, innerHeight);
+  if(composer) composer.setSize(innerWidth, innerHeight);
+}
 function applySettings(){
   Audio.setMusicVol(settings.music); Audio.setSfxVol(settings.sfx);
   TUNE.camFollow = settings.camera;
   if(filmPass) filmPass.enabled = settings.retro;
   if(rgbPass) rgbPass.enabled = settings.retro;
+  applyPerf();
   // reflect into the menu widgets
   const $=id=>document.getElementById(id);
   $('setMusic').value = Math.round(settings.music*100);
   $('setSfx').value = Math.round(settings.sfx*100);
   const tog=(id,on)=>{ const b=$(id); b.textContent=on?'On':'Off'; b.classList.toggle('off',!on); };
-  tog('setShake',settings.shake); tog('setCam',settings.camera); tog('setScan',settings.retro);
+  tog('setShake',settings.shake); tog('setCam',settings.camera); tog('setScan',settings.retro); tog('setPerf',settings.perf);
 }
 function openSettings(){ Audio.resume(); state.paused=true; Audio.rollOff();
   document.getElementById('center').classList.add('hidden');
@@ -1124,6 +1141,7 @@ document.getElementById('setSfx').oninput=e=>{ settings.sfx=e.target.value/100; 
 document.getElementById('setShake').onclick=()=>{ settings.shake=!settings.shake; applySettings(); saveSettings(); };
 document.getElementById('setCam').onclick=()=>{ settings.camera=!settings.camera; applySettings(); saveSettings(); };
 document.getElementById('setScan').onclick=()=>{ settings.retro=!settings.retro; applySettings(); saveSettings(); };
+document.getElementById('setPerf').onclick=()=>{ settings.perf=!settings.perf; applySettings(); saveSettings(); };
 document.getElementById('setReset').onclick=()=>{
   if(!confirm('Reset all best times and ghosts?')) return;
   state.best=LEVELS.map(()=>null); ghostData=LEVELS.map(()=>null); bestFull=LEVELS.map(()=>false);
@@ -1280,6 +1298,7 @@ if(matchMedia('(pointer:coarse)').matches){ document.body.classList.add('touch')
   function end(){ active=false; nub.style.left='35px'; nub.style.top='35px'; rawInput.x=0; rawInput.z=0; }
   stick.addEventListener('pointerup',end); stick.addEventListener('pointercancel',end);
   document.getElementById('phaseBtn').addEventListener('pointerdown',e=>{e.preventDefault();tryDash();});
+  document.getElementById('restartBtn').addEventListener('pointerdown',e=>{e.preventDefault();restartStage();});
 })();
 
 // ---- Physics -------------------------------------------------------------
